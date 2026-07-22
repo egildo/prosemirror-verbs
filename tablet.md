@@ -62,7 +62,7 @@ Dissolved (2026-07-19): **active** — the boolean readback wearing its own name
 
 ## The surfaces ruling (2026-07-18)
 
-The plugin stays lean: `src/verbs/` holds the registry and its pure projections — exactly the contents of the future package. The web components and every other consumer are **venue furniture**, in `src/surfaces/`, and stay behind at extraction. This closes the where-do-the-components-go question; the import direction (surfaces read verbs, never the reverse) is the boundary made mechanical.
+The plugin stays lean: `src/verbs/` holds the registry and its pure projections — exactly the contents of the future package. The web components and every other consumer are **venue furniture**, in `src/surfaces/`, and stay behind at extraction. This closes the where-do-the-components-go question; the import direction (surfaces read verbs, never the reverse) is the boundary made mechanical. *(Amended 2026-07-19, after both extractions: the ruling's core stands — chrome never enters this package — but "stay behind" evolved: the toolbar surface graduated into its own package, `prosemirror-surface`, per the ecosystem stone's host half. The two packages share no dependency; they join by the spec's structural shape, exactly as plugins join the registry. The console rig and the prompt collector remain venue furniture.)*
 
 ## Open questions
 
