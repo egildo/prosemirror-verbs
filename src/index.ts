@@ -17,6 +17,7 @@ export {
   collectingCommand,
   toKeymap,
   toolbarSpecs,
+  controlSpecs,
   formatKeys,
   markActive,
   markupActive,
@@ -36,4 +37,6 @@ export type {
   Keyboard,
   ToolbarSpec,
   ToolbarItem,
+  ControlSpec,
+  ControlItem,
 } from './registry.js'

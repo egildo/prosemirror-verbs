@@ -17,7 +17,10 @@ import {
   composeKeyboard,
   toKeymap,
   formatKeys,
+  controlSpecs,
+  toolbarSpecs,
   type VerbEntry,
+  type ControlSpec,
 } from '../src/index.js'
 
 const schema = new Schema({
@@ -96,6 +99,108 @@ describe('expand', () => {
 
   it('returns nothing for a verb without an enumerable domain', () => {
     expect(expand({ id: 'x', label: 'X', command: noop })).toEqual([])
+  })
+})
+
+describe('controlSpecs — the shape names the control', () => {
+  const ask = () => ({ v: 'asked' })
+  const controls = (verbs: ReturnType<typeof composeVerbs>, collect?: typeof ask) =>
+    controlSpecs(verbs, 'g', collect ? { collect } : {}).filter(
+      (item): item is ControlSpec => !('separator' in item),
+    )
+
+  const plain: VerbEntry = { id: 'plain', label: 'Plain', short: 'P', command: noop, group: 'g' }
+  const field: VerbEntry = {
+    id: 'field',
+    label: 'Field verb',
+    command: (args) => (args.v === 'x' ? noop : never),
+    args: [{ name: 'v', label: 'Value', type: 'text' }],
+    read: () => 'standing',
+    enabled: () => true,
+    group: 'g',
+  }
+  const select: VerbEntry = {
+    id: 'select',
+    label: 'Select verb',
+    command: () => noop,
+    args: [{ name: 'm', label: 'Member', domain: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] }],
+    read: () => 'b',
+    group: 'g',
+  }
+  const pair: VerbEntry = {
+    id: 'pair',
+    label: 'Two args',
+    short: '⊞',
+    command: () => noop,
+    args: [{ name: 'x', label: 'X' }, { name: 'y', label: 'Y' }],
+    group: 'g',
+  }
+
+  it('reads button, field and select off the declaration alone', () => {
+    const specs = controls(composeVerbs(plain, field, select))
+    expect(specs.map((spec) => [spec.id, spec.kind])).toEqual([
+      ['plain', 'button'],
+      ['field', 'field'],
+      ['select', 'select'],
+    ])
+  })
+
+  it('keeps the readback whole — the domain the toolbar projection throws away', () => {
+    const [spec] = controls(composeVerbs(field))
+    expect(spec!.value!(state)).toBe('standing')
+    // The same verb, projected for a strip of buttons, can only say "lit".
+    const [flat] = toolbarSpecs(composeVerbs({ ...field, short: 'F' }), 'g', { collect: ask })
+    expect((flat as { active: (s: unknown) => boolean }).active(state)).toBe(true)
+  })
+
+  it('a field commits through write, needing no collector', () => {
+    const [spec] = controls(composeVerbs(field))
+    expect(spec!.write!('x')(state)).toBe(true)
+    expect(spec!.write!('other')(state)).toBe(false)
+    expect(spec!.label).toBe('Value') // the argument's own words
+    expect(spec!.type).toBe('text')
+  })
+
+  it("a field's command dry-runs the enabled gate and asks only on a real run", () => {
+    const gated = composeVerbs({ ...field, enabled: () => false })
+    expect(controls(gated)[0]!.command(state, undefined)).toBe(false)
+    const open = controls(composeVerbs(field), ask)[0]!
+    expect(open.command(state, undefined)).toBe(true)
+    const dispatch = vi.fn()
+    open.command(state, dispatch)
+    expect(dispatch).not.toHaveBeenCalled() // 'asked' is not 'x'; the verb refused honestly
+  })
+
+  it('a select carries its members and its current one', () => {
+    const [spec] = controls(composeVerbs(select))
+    expect(spec!.options!.map((option) => option.value)).toEqual(['a', 'b'])
+    expect(spec!.value!(state)).toBe('b')
+    expect(spec!.label).toBe('Select verb')
+  })
+
+  it('a multi-arg verb stays a modal button, and needs a collector to appear', () => {
+    expect(controls(composeVerbs(pair))).toEqual([])
+    const [spec] = controls(composeVerbs(pair), ask)
+    expect(spec!.kind).toBe('button')
+    expect(spec!.label).toBe('⊞')
+  })
+
+  it('omits what has no control: no args and no face, or an argument with nothing to show', () => {
+    const faceless: VerbEntry = { id: 'faceless', label: 'F', command: noop, group: 'g' }
+    const blind: VerbEntry = {
+      id: 'blind',
+      label: 'B',
+      command: () => noop,
+      args: [{ name: 'v', label: 'V' }],
+      group: 'g',
+    }
+    expect(controls(composeVerbs(faceless, blind), ask)).toEqual([])
+  })
+
+  it('sections meet at a separator, in the order the surface asks for', () => {
+    const verbs = composeVerbs(plain, { ...select, id: 'other', group: 'h' })
+    const items = controlSpecs(verbs, ['h', 'g'])
+    expect(items.map((item) => ('separator' in item ? '|' : item.id))).toEqual(['other', '|', 'plain'])
   })
 })
 
