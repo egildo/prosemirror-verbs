@@ -53,26 +53,44 @@ export interface VerbArg {
 /** An arg-verb's command: give it the collected args, it gives you the Command. */
 export type CommandFactory = (args: VerbArgs) => Command
 
-/** The entry contract. Extra properties are preserved, never refused. */
-export interface VerbEntry {
+/// What a plugin declares: **what it can do, and what it can tell you.**
+/// Nothing else. No name, no glyph, no chord, no category — a plugin does not
+/// know it is being called a verb, and does not know a surface exists (Egildo's
+/// ruling, 2026-07-28, amending V12: plugins ship *capabilities*, hosts ship
+/// verbs and chrome). The cut is not arbitrary: only the plugin can know that a
+/// formula lives on a `td` and not a `th`, and only the host can know what to
+/// call it, where to put it, or which chord it answers to.
+export interface Capability {
   /** Unique across the composition — a collision is a build error. */
   id: string
-  /** Human name (menu, palette, button title). */
-  label: string
   /** A ProseMirror Command — or, iff `args` is declared, a factory (args) => Command. */
   command: Command | CommandFactory
-  /** Compact toolbar face; a surface may curate by its absence. */
-  short?: string
   /** The readback, if the verb addresses state: pure (state) => value. Booleans for toggles, a member value for one-of-N, a count for wraps. */
   read?: (state: EditorState) => unknown
   /** Availability for arg-verbs only, whose factory can't be dry-run without arguments. */
   enabled?: (state: EditorState) => boolean
+  /** Present ⇒ `command` is a factory. */
+  args?: VerbArg[]
+}
+
+/// The keys a capability owns. Everything else on an entry is taste, and taste
+/// is the host's — which is what lets the declaration itself be seated as one
+/// layer among several (see `applyAttrs`), and what lets a layer be refused for
+/// reaching past its share.
+const CAPABILITY_KEYS = new Set(['id', 'command', 'read', 'enabled', 'args', 'run'])
+
+/** The entry contract: a capability, plus whatever taste the declarer chose to
+ * carry. Every taste field is optional — an entry may be a bare capability —
+ * and extra properties are preserved, never refused. */
+export interface VerbEntry extends Capability {
+  /** Human name (menu, palette, button title). Absent ⇒ the naming layer derives one from the id. */
+  label?: string
+  /** Compact toolbar face; a surface may curate by its absence. */
+  short?: string
   /** Chord(s) — duplicate chords within a composition are refused at build. */
   keys?: string[]
   /** Extra search terms for palette-grade consumers. */
   keywords?: string[]
-  /** Present ⇒ `command` is a factory. */
-  args?: VerbArg[]
   /** Category — surface curation handle. */
   group?: string
   /** Extra properties are preserved, never refused — the NodeSpec allowance. */
@@ -144,7 +162,7 @@ export function composeVerbs(...sets: (VerbEntry | VerbEntry[])[]): Verb[] {
       const prior = claimedBy.get(entry.id)
       if (prior) {
         throw new Error(
-          `Verbs: id "${entry.id}" is declared by both "${prior.label}" and "${entry.label}"`,
+          `Verbs: id "${entry.id}" is declared by both "${prior.label ?? prior.id}" and "${entry.label ?? entry.id}"`,
         )
       }
       claimedBy.set(entry.id, entry)
@@ -152,6 +170,158 @@ export function composeVerbs(...sets: (VerbEntry | VerbEntry[])[]): Verb[] {
     }
   }
   return verbs
+}
+
+// ── Attributes: the host's half, in layers ───────────────────────────────────
+//
+// Composition gathers capabilities (V10, above); attribution dresses them. The
+// two are the host's two acts and they stay two, because they answer different
+// questions: *what can this editor do* and *what shall we call it, where does it
+// go, what does it answer to*. A venue writes them as two files.
+//
+// Layers resolve in order, later winning per key — and like the keyboard's stack
+// of courts (V11), what a stack owes is not refusal but **sight**: `describe`
+// answers, for any verb, which layer set which attribute and who won. The first
+// time a control turns up somewhere you didn't put it, that is the instrument
+// you will want, and it is the same instrument, pointed at attributes instead of
+// keys.
+//
+// The bag is open on purpose. A surface may contribute a layer whose vocabulary
+// this package never learns — `manner`, `room`, `priority`, whatever a renderer
+// needs — under exactly the law the entry contract already carries: extra
+// properties are preserved, never refused.
+
+/** The taste half of a verb: everything a host decides. Open by construction. */
+export interface VerbAttrs {
+  label?: string
+  short?: string
+  keys?: string[]
+  keywords?: string[]
+  group?: string
+  [attr: string]: unknown
+}
+
+/** One claim on one attribute, as `describe` reports it. */
+export interface AttrClaim {
+  layer: string
+  key: string
+  value: unknown
+  wins?: boolean
+}
+
+/** A layer of taste over the register. `match` absent means every verb. */
+export interface AttrLayer {
+  name: string
+  /** An exact id, a `prefix*` glob, `*`, or a predicate. Deliberately not CSS. */
+  match?: string | ((verb: Verb) => boolean)
+  /** A bag, or a function of the verb — which is how a derived layer (room from
+   * the args' shape, say) is expressed without this package knowing what room is. */
+  attrs: VerbAttrs | ((verb: Verb) => VerbAttrs)
+}
+
+/** The attributed register, plus its sight. */
+export interface Attributed {
+  verbs: Verb[]
+  /** Every claim on this verb, in court order, the winner per key marked. */
+  describe(id: string): AttrClaim[]
+  /** The sweep: every (verb, key) more than one layer claimed. Reports, refuses nothing. */
+  audit(): { id: string; key: string; claims: AttrClaim[] }[]
+}
+
+/// A label from an id, for a register nobody has named yet: the namespace falls
+/// away (a table strip whose every button began "Table…" would be noise), the
+/// separators become spaces, the first letter rises. `table:add-row-after` reads
+/// "Add row after". This is what keeps install-and-go true under the split — a
+/// host that writes no attributes at all still gets a usable editor.
+export function humanizeId(id: string): string {
+  const local = id.slice(id.lastIndexOf(':') + 1)
+  const words = local.split(/[-_]/).filter(Boolean).join(' ')
+  return words ? words[0]!.toUpperCase() + words.slice(1) : id
+}
+
+/// The default naming layer, seated first by `applyAttrs` so it is overridable
+/// by anything and visible in `describe` — a default in a layer, not a fallback
+/// buried in code.
+export const namingLayer: AttrLayer = {
+  name: 'naming',
+  attrs: (verb) => ({ label: humanizeId(verb.id) }),
+}
+
+function matches(layer: AttrLayer, verb: Verb): boolean {
+  const match = layer.match
+  if (match == null || match === '*') return true
+  if (typeof match === 'function') return match(verb)
+  return match.endsWith('*') ? verb.id.startsWith(match.slice(0, -1)) : verb.id === match
+}
+
+// The declaration is a layer too — seated after the naming default and before
+// every host layer, so a plugin that still carries taste (as all of them do
+// today) simply loses to the host that disagrees. When plugins shed their taste
+// entirely, this layer goes quietly empty and nothing else changes.
+function declaredTaste(verb: Verb): VerbAttrs {
+  const attrs: VerbAttrs = {}
+  for (const key of Object.keys(verb)) if (!CAPABILITY_KEYS.has(key)) attrs[key] = verb[key]
+  return attrs
+}
+
+/// Dress a composed register. Layers apply in order, later winning per key;
+/// the naming default is seated first and the declaration's own taste second.
+/// A layer that reaches for a capability key is refused at build time — the
+/// same posture composition takes to a duplicate id, and for the same reason:
+/// taste may rename a verb, never redefine what it does.
+export function applyAttrs(verbs: Verb[], layers: AttrLayer[] = []): Attributed {
+  const claims = new Map<string, AttrClaim[]>()
+
+  const dressed = verbs.map((verb) => {
+    const stack: AttrLayer[] = [
+      namingLayer,
+      { name: 'declaration', attrs: declaredTaste(verb) },
+      ...layers,
+    ]
+    const resolved: Record<string, unknown> = {}
+    const mine: AttrClaim[] = []
+    for (const layer of stack) {
+      // A layer sees the verb *as resolved so far*, not as declared — so a
+      // later layer can match on what an earlier one decided ("everything
+      // unbounded goes docked"). That is what makes these layers and not a
+      // pile of independent patches, and it is why the order is reportable.
+      const current = { ...verb, ...resolved } as Verb
+      if (!matches(layer, current)) continue
+      const attrs = typeof layer.attrs === 'function' ? layer.attrs(current) : layer.attrs
+      for (const [key, value] of Object.entries(attrs)) {
+        if (value === undefined) continue
+        if (CAPABILITY_KEYS.has(key)) {
+          throw new Error(
+            `Verbs: layer "${layer.name}" may not set "${key}" on "${verb.id}" — that is the capability's, not taste's`,
+          )
+        }
+        resolved[key] = value
+        mine.push({ layer: layer.name, key, value })
+      }
+    }
+    const winners = new Map<string, AttrClaim>()
+    for (const claim of mine) winners.set(claim.key, claim)
+    for (const claim of winners.values()) claim.wins = true
+    claims.set(verb.id, mine)
+    return { ...verb, ...resolved } as Verb
+  })
+
+  return {
+    verbs: dressed,
+    describe: (id) => claims.get(id) ?? [],
+    audit() {
+      const contested: { id: string; key: string; claims: AttrClaim[] }[] = []
+      for (const [id, all] of claims) {
+        const byKey = new Map<string, AttrClaim[]>()
+        for (const claim of all) {
+          if (!byKey.has(claim.key)) byKey.set(claim.key, [])
+          byKey.get(claim.key)!.push(claim)
+        }
+        for (const [key, group] of byKey) if (group.length > 1) contested.push({ id, key, claims: group })
+      }
+      return contested
+    },
+  }
 }
 
 // ── Starter sets ─────────────────────────────────────────────────────────────
@@ -201,7 +371,13 @@ export function basicVerbs(schema: Schema): VerbEntry[] {
       short: '🔗',
       command: (args: VerbArgs) => toggleMark(schema.marks.link, { href: args.href as string }),
       args: [{ name: 'href', label: 'URL', type: 'url' }],
-      enabled: (state: EditorState) => !state.selection.empty,
+      // The command's own dry run, not a hand-written guess at it. "Not empty"
+      // was wider than the truth: a NodeSelection on an atom that carries no
+      // marks is not empty either, so the URL field turned up over a
+      // spreadsheet cell. Dimming hid that; hiding made every loose gate
+      // visible at once (venue finding, 2026-07-28) — and the rule from
+      // yesterday applies again: a gate must not be wider than the command.
+      enabled: (state: EditorState) => toggleMark(schema.marks.link)(state),
       // The readback is the href you stand in — a value domain. It lights the
       // toolbar face inside a link, and a collector prefills from it. A range
       // reads forward ($from.marks() at a link's start boundary would read the
@@ -563,7 +739,7 @@ export function toolbarSpecs(
           return {
             id: verb.id,
             label: verb.short!,
-            title: verb.label,
+            title: verb.label ?? humanizeId(verb.id),
             command: verb.args ? collectingCommand(verb, collect!) : verb.run(),
             // The element's `active` is this surface's native rendering of any
             // readback domain: lit on truthy (a boolean directly, a count > 0).
@@ -623,6 +799,10 @@ export interface ControlSpec {
   /** The arg's declared type — a field's input type. */
   type?: string
   keys?: string[]
+  /** Curation handle, carried through rather than dissolved into separators. */
+  group?: string
+  /** Whatever a surface layer wrote — `room`, `manner`, `priority`, … */
+  [attr: string]: unknown
 }
 export type ControlItem = ControlSpec | { separator: true }
 
@@ -643,24 +823,24 @@ function toControl(verb: Verb, collect?: Collector): ControlSpec | null {
     // Multi-arg buttons still need someone to ask; without a collector they
     // stay declared, not collected — the toolbar projection's own rule.
     if (verb.args && !collect) return null
-    return {
+    return passthrough(verb, {
       id: verb.id,
       kind,
       label: verb.short!,
-      title: verb.label,
+      title: verb.label ?? humanizeId(verb.id),
       command: verb.args ? collectingCommand(verb, collect!) : verb.run(),
       ...(read ? { active: (state: EditorState) => !!read(state) } : {}),
       ...(verb.keys ? { keys: verb.keys } : {}),
-    }
+    })
   }
   const arg = verb.args![0]!
-  return {
+  return passthrough(verb, {
     id: verb.id,
     kind,
     // A field wears the argument's own label — the very words a prompting
     // collector would have asked with.
-    label: kind === 'field' ? arg.label : verb.label,
-    title: verb.label,
+    label: kind === 'field' ? arg.label : verb.label ?? humanizeId(verb.id),
+    title: verb.label ?? humanizeId(verb.id),
     // Availability without collecting: a factory cannot be dry-run, so the
     // gate is the verb's own. With a collector, a real run still asks —
     // that is what a chord or a palette needs, having no control to read.
@@ -674,7 +854,22 @@ function toControl(verb: Verb, collect?: Collector): ControlSpec | null {
     ...(kind === 'select' ? { options: arg.domain } : {}),
     ...(arg.type ? { type: arg.type } : {}),
     ...(verb.keys ? { keys: verb.keys } : {}),
+  })
+}
+
+// The spec is an open bag too, and for the same reason the entry is: a surface
+// layer may have written `room`, `manner`, `priority`, `unavailable` — words
+// this package has never heard and has no business dropping on the floor
+// between the verb that carries them and the element that acts on them. What
+// the projection has already decided for itself stands; everything else rides.
+const SPEC_OWNED = new Set(['label', 'short', 'keys', 'keywords'])
+function passthrough(verb: Verb, spec: ControlSpec): ControlSpec {
+  const out: Record<string, unknown> = { ...spec }
+  for (const key of Object.keys(verb)) {
+    if (CAPABILITY_KEYS.has(key) || SPEC_OWNED.has(key) || key in out) continue
+    out[key] = verb[key]
   }
+  return out as ControlSpec
 }
 
 /// Projection → control specs. `groups` is the surface's curation, in order;

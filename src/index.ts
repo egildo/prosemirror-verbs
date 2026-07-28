@@ -18,6 +18,9 @@ export {
   toKeymap,
   toolbarSpecs,
   controlSpecs,
+  applyAttrs,
+  humanizeId,
+  namingLayer,
   formatKeys,
   markActive,
   markupActive,
@@ -25,6 +28,11 @@ export {
 } from './registry.js'
 
 export type {
+  Capability,
+  VerbAttrs,
+  AttrLayer,
+  AttrClaim,
+  Attributed,
   VerbEntry,
   Verb,
   VerbArg,

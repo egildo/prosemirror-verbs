@@ -19,8 +19,11 @@ import {
   formatKeys,
   controlSpecs,
   toolbarSpecs,
+  applyAttrs,
+  humanizeId,
   type VerbEntry,
   type ControlSpec,
+  type AttrLayer,
 } from '../src/index.js'
 
 const schema = new Schema({
@@ -99,6 +102,146 @@ describe('expand', () => {
 
   it('returns nothing for a verb without an enumerable domain', () => {
     expect(expand({ id: 'x', label: 'X', command: noop })).toEqual([])
+  })
+})
+
+describe('applyAttrs — the host dresses what the plugin declared', () => {
+  // A bare capability: what it can do, what it can tell you. No name, no glyph,
+  // no chord, no group — the plugin does not know it is called a verb.
+  const capability: VerbEntry = { id: 'table:add-row-after', command: noop }
+
+  const dress = (entry: VerbEntry, layers: AttrLayer[] = []) => applyAttrs(composeVerbs(entry), layers)
+
+  it('names an unnamed register from its ids alone — install-and-go survives the split', () => {
+    expect(humanizeId('table:add-row-after')).toBe('Add row after')
+    expect(humanizeId('blocktype:h1')).toBe('H1')
+    expect(humanizeId('bullet_list')).toBe('Bullet list')
+    expect(humanizeId('strong')).toBe('Strong')
+    expect(dress(capability).verbs[0]!.label).toBe('Add row after')
+  })
+
+  it('layers resolve in order, later winning per key', () => {
+    const { verbs } = dress(capability, [
+      { name: 'house', attrs: { label: 'Insert row', group: 'table', short: '⊕' } },
+      { name: 'venue', attrs: { short: '⊕↓' } },
+    ])
+    expect(verbs[0]!.label).toBe('Insert row') // beat the naming default
+    expect(verbs[0]!.short).toBe('⊕↓') // beat the house layer
+    expect(verbs[0]!.group).toBe('table') // untouched by the later layer
+  })
+
+  it("the declaration is a layer too — it beats the naming default and loses to the host", () => {
+    const declaring: VerbEntry = { id: 'x', label: 'Declared', short: 'D', command: noop }
+    expect(dress(declaring).verbs[0]!.label).toBe('Declared')
+    const overridden = dress(declaring, [{ name: 'venue', attrs: { label: 'Host says' } }])
+    expect(overridden.verbs[0]!.label).toBe('Host says')
+    expect(overridden.verbs[0]!.short).toBe('D') // what the host left alone still stands
+  })
+
+  it('matches by exact id, by prefix glob, and by predicate', () => {
+    const verbs = composeVerbs(
+      { id: 'table:one', command: noop },
+      { id: 'table:two', command: noop },
+      { id: 'mark:bold', command: noop },
+    )
+    const seen = (layer: AttrLayer) =>
+      applyAttrs(verbs, [layer])
+        .verbs.filter((verb) => verb.hit)
+        .map((verb) => verb.id)
+    expect(seen({ name: 'l', match: 'table:one', attrs: { hit: true } })).toEqual(['table:one'])
+    expect(seen({ name: 'l', match: 'table:*', attrs: { hit: true } })).toEqual(['table:one', 'table:two'])
+    expect(seen({ name: 'l', match: '*', attrs: { hit: true } })).toHaveLength(3)
+    expect(seen({ name: 'l', attrs: { hit: true } })).toHaveLength(3) // absent match = every verb
+    expect(seen({ name: 'l', match: (verb) => verb.id.endsWith('two'), attrs: { hit: true } })).toEqual(['table:two'])
+  })
+
+  it('a layer may be a function of the verb — how a derived attribute is expressed', () => {
+    // The registry never learns what "room" means; the layer computes it from
+    // the shape the plugin declared, and the bag carries it through untouched.
+    const verbs = composeVerbs(
+      { id: 'plain', command: noop },
+      { id: 'bounded', command: () => noop, args: [{ name: 'm', label: 'M', domain: [{ value: 'a', label: 'A' }] }] },
+      { id: 'unbounded', command: () => noop, args: [{ name: 'v', label: 'V', type: 'text' }] },
+    )
+    const room: AttrLayer = {
+      name: 'derived room',
+      attrs: (verb) => ({
+        room: !verb.args ? 'glyph' : verb.args[0]!.domain ? 'bounded' : 'unbounded',
+      }),
+    }
+    expect(applyAttrs(verbs, [room]).verbs.map((verb) => verb.room)).toEqual(['glyph', 'bounded', 'unbounded'])
+  })
+
+  it('a later layer sees what an earlier one decided — these are layers, not patches', () => {
+    const verbs = composeVerbs(
+      { id: 'glyphy', command: noop },
+      { id: 'long', command: () => noop, args: [{ name: 'v', label: 'V', type: 'text' }] },
+    )
+    const dressed = applyAttrs(verbs, [
+      { name: 'derived room', attrs: (verb) => ({ room: verb.args ? 'unbounded' : 'glyph' }) },
+      { name: 'placement', attrs: { manner: 'anchored' } },
+      // Matches on room, which no verb declared and the layer above computed.
+      { name: 'the value bar', match: (verb) => verb.room === 'unbounded', attrs: { manner: 'docked' } },
+    ])
+    expect(dressed.verbs.map((verb) => [verb.id, verb.manner])).toEqual([
+      ['glyphy', 'anchored'],
+      ['long', 'docked'],
+    ])
+  })
+
+  it('carries an attribute it has never heard of — the open-bag law', () => {
+    const { verbs } = dress(capability, [{ name: 'surface', attrs: { manner: 'docked', priority: 3, nonsense: {} } }])
+    expect(verbs[0]!.manner).toBe('docked')
+    expect(verbs[0]!.priority).toBe(3)
+    expect(verbs[0]!.nonsense).toEqual({})
+  })
+
+  it('never lets taste redefine the capability', () => {
+    for (const key of ['command', 'read', 'enabled', 'args', 'id']) {
+      expect(() => dress(capability, [{ name: 'greedy', attrs: { [key]: noop } }])).toThrow(
+        /may not set .* that is the capability's/,
+      )
+    }
+    // And the capability itself survives dressing untouched.
+    const { verbs } = dress(capability, [{ name: 'venue', attrs: { label: 'X' } }])
+    expect(verbs[0]!.run()(state)).toBe(true)
+  })
+
+  it('owes sight, not refusal: describe names every claimant and the winner', () => {
+    const { describe: claims } = dress({ id: 'x', label: 'Declared', command: noop }, [
+      { name: 'house', attrs: { label: 'House' } },
+      { name: 'venue', match: 'x', attrs: { label: 'Venue' } },
+    ])
+    expect(claims('x').map((claim) => [claim.layer, claim.value, !!claim.wins])).toEqual([
+      ['naming', 'X', false],
+      ['declaration', 'Declared', false],
+      ['house', 'House', false],
+      ['venue', 'Venue', true],
+    ])
+    expect(claims('nobody')).toEqual([])
+  })
+
+  it('audits the contested keys, refusing none of them', () => {
+    const { audit } = dress({ id: 'x', command: noop }, [
+      { name: 'house', attrs: { group: 'a' } },
+      { name: 'venue', attrs: { group: 'b' } },
+    ])
+    const contested = audit()
+    expect(contested.find((row) => row.key === 'group')!.claims.map((claim) => claim.layer)).toEqual([
+      'house',
+      'venue',
+    ])
+    // label is contested too (naming vs nothing declared) — only keys more than
+    // one layer claimed are reported, so a lone naming claim is not listed.
+    expect(contested.every((row) => row.claims.length > 1)).toBe(true)
+  })
+
+  it('a dressed register feeds the projections it always fed', () => {
+    const { verbs } = applyAttrs(composeVerbs({ id: 'table:add-row-after', command: noop }), [
+      { name: 'venue', attrs: { short: '⊕↓', group: 'table' } },
+    ])
+    const [spec] = toolbarSpecs(verbs, 'table')
+    expect(spec).toMatchObject({ id: 'table:add-row-after', label: '⊕↓', title: 'Add row after' })
   })
 })
 
