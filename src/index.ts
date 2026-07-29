@@ -16,8 +16,6 @@ export {
   composeKeyboard,
   collectingCommand,
   toKeymap,
-  toolbarSpecs,
-  controlSpecs,
   applyAttrs,
   humanizeId,
   namingLayer,
@@ -43,11 +41,29 @@ export type {
   PolicyLayer,
   KeyClaim,
   Keyboard,
+} from './registry.js'
+
+// Projections: the register rendered into what a consumer eats. `controlSpecs`
+// is a flat view of `controlTree` — one layout among several, no longer the
+// only answer the projection can give.
+export { toolbarSpecs, controlSpecs, controlTree, isGroup } from './project.js'
+export type {
   ToolbarSpec,
   ToolbarItem,
   ControlSpec,
   ControlItem,
-} from './registry.js'
+  ControlGroup,
+  ControlTree,
+  ControlConflict,
+  TreeItem,
+  GroupSpec,
+  GroupList,
+} from './project.js'
+
+// Relations: what the register knows about itself. Facts, derived — never
+// declared, so never wrong (V14).
+export { relations } from './relations.js'
+export type { Relations, RelationEdge } from './relations.js'
 
 // Derived: what the verb-Schema reads off the noun-Schema. `interiorTypes` is
 // exported because the sealed closure is a whole-schema property and must stay

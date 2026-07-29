@@ -120,9 +120,53 @@ The API grants pure, single-sourced computation; a consumer projects it into its
 - `toKeymap(verbs, { collect })` — the verb chord layer alone, for hosts that keep their other keymaps out of the composition.
 - `collectingCommand(verb, collect)` — the sync collector's wrap: an arg-verb as a plain dispatch-guarded command (see Arguments). `composeKeyboard` and `toolbarSpecs` apply it automatically when given `{ collect }`.
 - `toolbarSpecs(verbs, groups, { collect })` — the shape a toolbar-grade surface eats, curated to an ordered list of groups with a separator marker between sections; filtered to entries with a `short` face; arg-verbs included only when `collect` is supplied. The spec's `active` is derived from `read` by truthiness (a boolean directly, a count when > 0) — the surface's native rendering of any domain. Each spec carries its `keys` so a surface can show chords. One-of-N forms render as honest radio: lit when current, no-op when pressed again (the toggle-back question is open — tablet, *the default member*).
+- `controlTree(verbs, groups, { collect })` — **the register with its structure kept**: sections in the order given, nested, each holding the controls of the verbs assigned to it. Returns `{ items, audit() }`. A section with nothing in it — and no child that has anything — does not appear, which is how availability-hiding generalises from a separator to a whole group. See *Sections* below.
+- `controlSpecs(verbs, groups, { collect })` — a **flat strip**: the tree walked depth-first, with a separator between top-level sections. This is a *view* of `controlTree`, which is the point — the flat arrangement is one layout among several rather than the only answer the projection can give.
+
+Both control projections read a verb's **shape** and name the control it already implies. Nothing extra is declared; the fork was always in the data:
+
+| the declaration | the control |
+|---|---|
+| no args | **button** — the face is `short`; no `short`, no control |
+| one arg carrying a domain | **select** — `expand` is the other, equally valid rendering |
+| one arg, no domain, a value readback | **field** — show the value, edit it, commit through `write` |
+| several args | **button**, collected modally, and only when `collect` is supplied |
+
+A field needs no `Collector`: the control *is* the collector, and asking is what a field replaces. `command` stays dry-runnable on every kind, so one uniform probe answers availability — and for a field or a select it doubles as the modal fallback a chord or a palette needs, having no control to read.
 - `formatKeys(key, { mac })` — a chord for humans: `Mod-b` → `⌘B` or `Ctrl+B`. Pure string work; the platform is the caller's conf, so the registry stays free of the DOM.
 
 More projections (`paletteItems`, a `toolManifest` for agent consumers) join as their consumers arrive.
+
+## Sections
+
+`groups` — the second parameter every control projection takes — is either a list of ids or a list of specs:
+
+```js
+const GROUPS = [
+  { id: 'marks',  label: 'Format' },
+  { id: 'table',  label: 'Table', short: '⊞' },
+  { id: 'table/rows' },                  // nests under 'table'; label derived: "Rows"
+  { id: 'history', label: 'History' },
+]
+```
+
+- **Order is array position.** There is no ordering field and no need for one: VS Code needs `"navigation@1"` because its contributions arrive from manifests it cannot order, and a host writing one array does not (tablet V10 — refusal is a luxury of host-scale composition, and so is ordering).
+- **Nesting** comes from `parent`, or from a `/` path in the id when none is given. A path whose parent nobody declared becomes a root rather than vanishing.
+- **`label` absent** falls back to the last path segment, humanized — the sibling of how an unnamed verb gets called after its id.
+- **Only declared sections appear.** A verb whose group nobody asked for is still in the register, still reachable by chord and by palette, and simply has no seat in this chrome.
+
+The rule this encodes (tablet V14): **taste about a verb lives in the cascade; taste about a section lives in the section list.** Which section a verb belongs to is an opinion about that verb, so a layer can override it; what the sections *are* is not about any verb at all.
+
+## Relations
+
+`relations(verbs)` returns what the register knows about itself — `{ edges, formsOf, baseOf, alternatesOf, describe }`. Today that is **conjugation**: which verbs are the expanded forms of which domain verb.
+
+Nothing declares it. The edges are derived by looking for `${base.id}:${member.value}` in the register, so there is no `parent` field to go stale and no way to assert an edge that isn't there. Two consequences worth knowing:
+
+- **Self-verifying** — a form whose base was curated out of the composition truthfully has no base, and a host that never called `expand` gets no edges rather than a graph describing verbs that don't exist.
+- **Carried by the id convention**, so a host re-keying entries before composing (host sovereignty, tablet V10) loses the edges. Accepted deliberately: a broken convention *loses* an edge, a stale field *asserts a false one*.
+
+There is no `audit()` here — audit exists where claims compete, and derived facts don't. The condition that *is* worth reporting lives on `controlTree`: **a domain verb drawn alongside its own forms**, which is a host showing a select and a row of radio buttons for one declaration, having forgotten to choose.
 
 ## Arguments
 
