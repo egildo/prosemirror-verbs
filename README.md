@@ -6,26 +6,38 @@ It is one small package: the registry and its pure projections, nothing else. It
 
 ## The entry contract
 
-A verb is declared once, as plain data — and the shape below is a **structural contract, with nothing to import at runtime**: a plugin declares verbs by exporting plain objects, paying zero dependency on this package (tablet, *the composition law*). Only hosts, which project, depend on it. A TypeScript plugin may `import type { VerbEntry } from 'prosemirror-verbs'` — type-only, erased at build, so the zero-dependency claim holds.
+A verb is declared once, as plain data — and the shape below is a **structural contract, with nothing to import at runtime**: a plugin declares by exporting plain objects, paying zero dependency on this package (tablet, *the composition law*). Only hosts, which project, depend on it. A TypeScript plugin may `import type { Capability } from 'prosemirror-verbs'` — type-only, erased at build, so the zero-dependency claim holds.
+
+An entry has two halves, and the line between them is the doctrine (tablet V12). **The capability** is what only the plugin can know:
 
 ```js
 {
   id:       'strong',                          // REQUIRED — unique across the composition
-  label:    'Bold',                            // REQUIRED — human name (menu, palette, button title)
   command:  toggleMark(schema.marks.strong),   // REQUIRED — a Command, or (args) => Command
-  short:    'B',                               // compact toolbar face — optional
   read:     (state) => boolean | 'h2' | 2,     // the readback, if the verb addresses state — optional
   enabled:  (state) => boolean,                // availability for arg-verbs; no-arg verbs use the command's own dry run
-  keys:     ['Mod-b'],                         // chord(s) → the keyboard
-  keywords: ['bold', 'strong'],                // extra search terms → palette
-  args:     [{ name, label, type, domain? }],  // present ⇒ command is a factory
-  group:    'marks',                           // category → surface curation
+  args:     [{ name, type?, domain? }],        // present ⇒ command is a factory
 }
 ```
 
+**The taste** is what only the host can know — what to call it, which glyph it wears, which chord answers to it, where it sits. It may ride on the entry (this package's own starter sets do, being host-side furniture), but it belongs to the host, which writes it as a **cascade of layers** (tablet V13) and wins every disagreement:
+
+```js
+{
+  label:    'Bold',                            // human name — absent ⇒ derived from the id
+  short:    'B',                               // compact toolbar face; its absence is curation
+  keys:     ['Mod-b'],                         // chord(s) → the keyboard
+  keywords: ['bold', 'strong'],                // extra search terms → palette
+  group:    'marks',                           // category → surface curation
+  // …and whatever a surface layer needs: room, manner, priority, unavailable
+}
+```
+
+The test that tells them apart, for any new field: **could a second editor reasonably disagree?** If yes, it is taste. A plugin that wants to spare its hosts the naming may ship its suggestions as a *separate* export — plain data keyed by id, which a host seats as one layer or ignores (prosemirror-spreads' `spreadsTaste` is the worked example).
+
 The normative clauses:
 
-- **Required trio**: `id`, `label`, `command`. An entry with only these is a complete, API-callable verb.
+- **Required pair**: `id` and `command`. An entry with only these is a complete, API-callable verb, and `humanizeId` names it until someone names it better.
 - **The invariant**: `args` declared ⟺ `command` is a factory `(args) => Command`.
 - **One readback**: `read` returns the current value of whatever state the verb addresses — a boolean for a toggle, a member value for one-of-N, a count for a wrap. There is no separate `active`; a surface lights on the reading it gets.
 - **Purity clause**: dry runs and readbacks are called on *every* editor transaction by syncing consumers — they must be pure and cheap.
@@ -37,7 +49,30 @@ Composition normalizes every entry to one internal shape — `run: (args) => Com
 
 ## Composing
 
-`composeVerbs(...sets)` is the host's single act (tablet, *the composition law*): it takes arrays or single entries, normalizes them, and **refuses a duplicate id at build time** — the same law the keyboard applies to chords, possible only because one point sees every claim. Namespace your ids by taste (`insert:image`, `table:addRow`); the gate makes convention emerge rather than mandating one. And because entries are plain data, the host stays sovereign for free: re-key, strip, or override any entry with a `map` before composing — no API.
+`composeVerbs(...sets)` is the host's first act (tablet, *the composition law*): it takes arrays or single entries, normalizes them, and **refuses a duplicate id at build time** — the same law the keyboard applies to chords, possible only because one point sees every claim. Namespace your ids by taste (`insert:image`, `table:addRow`); the gate makes convention emerge rather than mandating one. And because entries are plain data, the host stays sovereign for free: re-key, strip, or override any entry with a `map` before composing — no API.
+
+## Dressing
+
+`applyAttrs(verbs, layers)` is the host's second act (tablet V13): the taste, written as an ordered stack of layers over the composed register. Composition answers *what can this editor do*; attribution answers *what shall we call it, where does it go, what does it answer to* — different questions, so a venue writes them as two files.
+
+```js
+const registry = applyAttrs(composeVerbs(/* … */), [
+  { name: 'spreads', attrs: (verb) => spreadsTaste[verb.id] ?? {} },   // a plugin's suggestions, seated
+  { name: 'sections', match: 'table:*', attrs: { group: 'table' } },   // a glob
+  { name: 'room', attrs: (verb) => ({ room: verb.args ? 'bounded' : 'glyph' }) },
+  { name: 'value bar', match: (v) => v.room === 'unbounded', attrs: { manner: 'docked' } },
+  { name: 'ours', match: 'table:abbr', attrs: { label: 'Reference name' } },
+])
+registry.verbs          // the dressed register — what you project
+registry.describe(id)   // every claim on this verb, in court order, the winner per key marked
+registry.audit()        // the sweep: every (verb, key) more than one layer claimed
+```
+
+- **Layers resolve in order, later winning per key**, and a layer sees the verb *as resolved so far* — so `match` can test what an earlier layer derived (`room` above), which is what makes this a cascade rather than a pile of patches.
+- **`match`** is an exact id, a `prefix*` glob, `*`, or a predicate. Deliberately not CSS — the day it needs specificity rules it has stopped being a stack of a host's opinions.
+- **Two layers are seated for you, beneath yours**: `naming`, which derives a label from the id, and `declaration`, whatever taste the entries carry. Both are ordinary layers, visible in `describe`, and yours beat them.
+- **Capability keys are closed**: a layer setting `id`, `command`, `read`, `enabled` or `args` throws at build. Taste may rename a verb, never redefine what it does.
+- **The bag is open**: `room`, `manner`, `priority` — words this package never learns ride through the projections untouched, to the surface that acts on them.
 
 ## Availability, activity, domains
 
@@ -98,26 +133,31 @@ const state = EditorState.create({
 
 A toolbar built on `toolbarSpecs` is a form bound to the selection: readbacks are its current values, verbs its setters. A headless consumer is the same registry with no DOM in the loop — the package does not care who calls; `keyboard.describe('Enter')` is its sight made tangible.
 
-A plugin joins without importing anything from here — its entries are plain data, and its behavior keys are an exported policy layer the host seats where it judges right:
+A plugin joins without importing anything from here — its capabilities are plain data, its behavior keys are an exported policy layer, and what it would *call* things is a third export the host seats or ignores:
 
 ```js
 // in prosemirror-spreads, say — no runtime import from prosemirror-verbs
-export const tableVerbs = (schema) =>
+export const tableCapabilities = (schema) =>
   schema.nodes.table
-    ? [{ id: 'table:addRow', label: 'Add row', command: addRowAfter, group: 'table' } /* … */]
+    ? [{ id: 'table:add-row-after', command: addRowAfter } /* … */]
     : [] // a set guards its nouns
 export const tableKeys = (schema) => ({ 'Tab': goToNextCell(1), 'Shift-Tab': goToNextCell(-1) })
+export const tableTaste = { 'table:add-row-after': { label: 'Add row after', short: '⊕↓' } }
 
 // in the host — one more argument to each act, and an audit to eyeball the stack
-const verbs = composeVerbs(basicVerbs(schema), tableVerbs(schema), /* … */)
-const keyboard = composeKeyboard(verbs, [
+const registry = applyAttrs(composeVerbs(basicVerbs(schema), tableCapabilities(schema)), [
+  { name: 'table', attrs: (verb) => tableTaste[verb.id] ?? {} },
+  { name: 'sections', match: 'table:*', attrs: { group: 'table' } },
+])
+const keyboard = composeKeyboard(registry.verbs, [
   { name: 'table keys', bindings: tableKeys(schema) },
   { name: 'list behavior', bindings: listBehavior(schema) },
   { name: 'base', bindings: baseKeymap },
 ], { collect })
 console.table(keyboard.audit()) // who shadows whom, in court order
+console.table(registry.audit()) // and the same sweep over attributes
 ```
 
 ## Status
 
-An autonomous package, extracted from its proving venue on 2026-07-19 with the tablet carried along. The venue still hosts it as a specimen and keeps every surface (toolbar element, console rig, prompt collector) as its own furniture — plugins ship verbs, hosts ship chrome (tablet, *the ecosystem stone*). The async collector, the unified toolbar→palette surface, and the top-layer (`popover`) floating are deferred — see [tablet.md](tablet.md)'s open questions.
+An autonomous package, extracted from its proving venue on 2026-07-19 with the tablet carried along. The venue still hosts it as a specimen and keeps every surface (toolbar element, console rig, prompt collector) as its own furniture — plugins ship capabilities, hosts ship verbs and chrome (tablet V12, amended 2026-07-29). The async collector, the unified toolbar→palette surface, and the top-layer (`popover`) floating are deferred — see [tablet.md](tablet.md)'s open questions.

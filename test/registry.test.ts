@@ -103,6 +103,26 @@ describe('expand', () => {
   it('returns nothing for a verb without an enumerable domain', () => {
     expect(expand({ id: 'x', label: 'X', command: noop })).toEqual([])
   })
+
+  it('expands bare members into bare capabilities the cascade can dress', () => {
+    // A domain's capability is its values; what the members are called is the
+    // host's. A plugin shipping `[{value:'head'},…]` must still expand — into
+    // ordinary entries with ordinary ids, carrying no taste to argue with.
+    const forms = expand({
+      id: 'table:row-region',
+      command: (args) => (args.region === 'foot' ? noop : never),
+      args: [{ name: 'region', domain: [{ value: 'head' }, { value: 'foot' }] }],
+      read: () => 'foot',
+    })
+    expect(forms.map((form) => form.id)).toEqual(['table:row-region:head', 'table:row-region:foot'])
+    expect(Object.keys(forms[0]!).sort()).toEqual(['command', 'id', 'read'])
+    expect(forms[1]!.read!(state)).toBe(true)
+    const { verbs } = applyAttrs(composeVerbs(forms), [
+      { name: 'host', attrs: (verb) => (verb.id.endsWith(':foot') ? { label: 'Footer rows', short: '⊥' } : {}) },
+    ])
+    expect(verbs.map((verb) => verb.label)).toEqual(['Head', 'Footer rows']) // derived, then named
+    expect(verbs[1]!.short).toBe('⊥')
+  })
 })
 
 describe('applyAttrs — the host dresses what the plugin declared', () => {
@@ -302,6 +322,23 @@ describe('controlSpecs — the shape names the control', () => {
     expect(spec!.write!('other')(state)).toBe(false)
     expect(spec!.label).toBe('Value') // the argument's own words
     expect(spec!.type).toBe('text')
+  })
+
+  it("a label-less argument leaves the field's face to the cascade — and so to the host", () => {
+    // `args` is a capability key, closed to layers. A label buried in it would
+    // be the one piece of taste no attribute could reach, so a plugin that
+    // ships bare capabilities declares none, and the field wears the verb's
+    // label — which a host layer governs like every other name.
+    const bare: VerbEntry = { ...field, args: [{ name: 'v', type: 'text' }] }
+    expect(controls(composeVerbs(bare))[0]!.label).toBe('Field verb') // the verb's own
+    const renamed = applyAttrs(composeVerbs(bare), [
+      { name: 'host', match: 'field', attrs: { label: 'Reference name' } },
+    ])
+    expect(controls(renamed.verbs)[0]!.label).toBe('Reference name')
+    expect(controls(renamed.verbs)[0]!.title).toBe('Reference name')
+    // Undeclared everywhere, the id still answers.
+    const nameless = composeVerbs({ id: 'table:abbr', command: noop, read: () => 'x', group: 'g', args: [{ name: 'abbr' }] })
+    expect(controls(nameless)[0]!.label).toBe('Abbr')
   })
 
   it("a field's command dry-runs the enabled gate and asks only on a real run", () => {

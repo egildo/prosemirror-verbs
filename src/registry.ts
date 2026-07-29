@@ -34,18 +34,24 @@ import type { Attrs, MarkType, NodeType, Schema } from 'prosemirror-model'
 /** Values a collector gathers for an arg-verb, keyed by the arg's `name`. */
 export type VerbArgs = Record<string, unknown>
 
-/** One member of an enumerable domain (a block type, an alignment, …). */
+/** One member of an enumerable domain (a block type, an alignment, …). The
+ * `value` is the capability — the domain is what the verb accepts; everything
+ * else is taste, so a member may be bare and be dressed by the cascade (the
+ * conjugated forms `expand` produces are ordinary entries with ordinary ids). */
 export interface DomainMember {
   value: string
-  label: string
+  label?: string
   short?: string
   keys?: string[]
 }
 
-/** What a collector must ask for; `type` vocabulary is open until collectors exist. */
+/** What a collector must ask for; `type` vocabulary is open until collectors
+ * exist. `label` is taste and therefore optional — a field falls back to the
+ * verb's own label (which the cascade governs), a prompting collector to the
+ * humanized arg name. */
 export interface VerbArg {
   name: string
-  label: string
+  label?: string
   type?: string
   domain?: DomainMember[]
 }
@@ -475,13 +481,16 @@ export function expand(verb: VerbEntry): VerbEntry[] {
   const read = verb.read
   return arg.domain.map((member) => ({
     id: `${verb.id}:${member.value}`,
-    label: member.label,
-    short: member.short,
     command: (verb.command as CommandFactory)({ [arg.name]: member.value }),
     ...(read ? { read: (state: EditorState) => read(state) === member.value } : {}),
-    keys: member.keys,
-    keywords: verb.keywords,
-    group: verb.group,
+    // Taste rides only where it was declared. A bare member yields a bare
+    // capability with an ordinary id, which the cascade then names like any
+    // other — so a plugin that ships no taste still expands cleanly.
+    ...(member.label ? { label: member.label } : {}),
+    ...(member.short ? { short: member.short } : {}),
+    ...(member.keys ? { keys: member.keys } : {}),
+    ...(verb.keywords ? { keywords: verb.keywords } : {}),
+    ...(verb.group ? { group: verb.group } : {}),
   }))
 }
 
@@ -837,9 +846,13 @@ function toControl(verb: Verb, collect?: Collector): ControlSpec | null {
   return passthrough(verb, {
     id: verb.id,
     kind,
-    // A field wears the argument's own label — the very words a prompting
-    // collector would have asked with.
-    label: kind === 'field' ? arg.label : verb.label ?? humanizeId(verb.id),
+    // A field wears the argument's own label where one was declared — the very
+    // words a prompting collector would have asked with — and otherwise the
+    // verb's, which is the cascade's and so the host's. That fallback is what
+    // lets a host name a field at all: `args` is a capability key, closed to
+    // layers, so a label buried in it would be the one piece of taste no
+    // attribute could reach.
+    label: (kind === 'field' ? arg.label : undefined) ?? verb.label ?? humanizeId(verb.id),
     title: verb.label ?? humanizeId(verb.id),
     // Availability without collecting: a factory cannot be dry-run, so the
     // gate is the verb's own. With a collector, a real run still asks —
@@ -913,7 +926,7 @@ const insertNode = (type: NodeType, attrs?: Attrs): Command => (state, dispatch)
 const requiredArgs = (type: NodeType): VerbArg[] =>
   Object.entries(type.spec.attrs || {})
     .filter(([, attr]) => !('default' in attr))
-    .map(([name]) => ({ name, label: name, type: 'text' }))
+    .map(([name]) => ({ name, type: 'text' }))
 
 // Derivation → verbs from the noun-Schema. One insert-verb per node type: the
 // possibility engine pointed at nouns rather than at commands. Every entry's command
