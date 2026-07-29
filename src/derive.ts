@@ -218,12 +218,12 @@ export function markVerbs(schema: Schema): VerbEntry[] {
 // `spreadsTaste`), applied to our own derivation; `args` rides here rather
 // than in a cascade layer because a capability key is closed to layers.
 const BASIC: Record<string, Partial<VerbEntry>> = {
-  strong: { label: 'Bold', short: 'B', keys: ['Mod-b'], keywords: ['bold', 'strong'] },
-  em: { label: 'Italic', short: 'I', keys: ['Mod-i'], keywords: ['italic', 'emphasis'] },
-  code: { label: 'Code', short: '</>', keys: ['Mod-`'], keywords: ['code', 'monospace'] },
+  strong: { label: 'Bold', icon: 'bold', keys: ['Mod-b'], keywords: ['bold', 'strong'] },
+  em: { label: 'Italic', icon: 'italic', keys: ['Mod-i'], keywords: ['italic', 'emphasis'] },
+  code: { label: 'Code', icon: 'code', keys: ['Mod-`'], keywords: ['code', 'monospace'] },
   link: {
     label: 'Link',
-    short: '🔗',
+    icon: 'link',
     keys: ['Mod-k'],
     keywords: ['link', 'url', 'href'],
     args: [{ name: 'href', label: 'URL', type: 'url' }],

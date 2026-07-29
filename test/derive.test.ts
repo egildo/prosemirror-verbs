@@ -154,7 +154,7 @@ describe('markVerbs — one capability per mark', () => {
     const [strong] = composeVerbs(basicVerbs(basic))
     expect(strong!.id).toBe('strong')
     expect(strong!.label).toBe('Bold')
-    expect(strong!.short).toBe('B')
+    expect(strong!.icon).toBe('bold')
     expect(strong!.keys).toEqual(['Mod-b'])
     expect(strong!.group).toBe('marks')
     // The one thing the schema cannot say: an href is a URL, not a string.

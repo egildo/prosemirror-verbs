@@ -66,7 +66,7 @@ describe('relations — conjugation, derived', () => {
 })
 
 describe('controlTree — sections, nested', () => {
-  const button = (id: string, group: string): VerbEntry => ({ id, short: '•', command: noop, group })
+  const button = (id: string, group: string): VerbEntry => ({ id, icon: '•', command: noop, group })
   const verbs = composeVerbs(
     button('table:add-row', 'table/rows'),
     button('table:del-row', 'table/rows'),
@@ -75,7 +75,7 @@ describe('controlTree — sections, nested', () => {
     button('undo', 'history'),
   )
   const GROUPS = [
-    { id: 'table', label: 'Table', short: '⊞' },
+    { id: 'table', label: 'Table', icon: '⊞' },
     { id: 'table/rows' },
     { id: 'table/cols', label: 'Columns' },
     { id: 'history' },
@@ -96,7 +96,7 @@ describe('controlTree — sections, nested', () => {
     const { items } = controlTree(verbs, GROUPS)
     const table = items[0] as { label: string; short?: string; items: TreeItem[] }
     expect(table.label).toBe('Table')
-    expect(table.short).toBe('⊞')
+    expect(table.icon).toBe('⊞')
     // 'table/rows' declared no label: the last segment, humanized — the sibling
     // of how an unnamed verb gets called after its id.
     expect((table.items[1] as { label: string }).label).toBe('Rows')
@@ -139,7 +139,7 @@ describe('controlTree.audit — a host that forgot to choose', () => {
     // nothing said so.
     const dressed = composeVerbs(
       { ...blocktype, group: 'blocktype' },
-      expand({ ...blocktype, group: 'blocktype' }).map((form) => ({ ...form, short: form.short ?? 'H' })),
+      expand({ ...blocktype, group: 'blocktype' }).map((form) => ({ ...form, icon: form.icon ?? 'H' })),
     )
     const [conflict, ...rest] = controlTree(dressed, ['blocktype']).audit()
     expect(rest).toEqual([])
@@ -149,14 +149,14 @@ describe('controlTree.audit — a host that forgot to choose', () => {
 
   it('is silent when only the forms are drawn — the venue is not in error', () => {
     const formsOnly = composeVerbs(
-      expand(blocktype).map((form) => ({ ...form, group: 'blocktype', short: form.short ?? 'H' })),
+      expand(blocktype).map((form) => ({ ...form, group: 'blocktype', icon: form.icon ?? 'H' })),
     )
     expect(controlTree(formsOnly, ['blocktype']).audit()).toEqual([])
   })
 })
 
 describe('controlSpecs — the flat strip is a view of the tree', () => {
-  const button = (id: string, group: string): VerbEntry => ({ id, short: '•', command: noop, group })
+  const button = (id: string, group: string): VerbEntry => ({ id, icon: '•', command: noop, group })
   const verbs = composeVerbs(
     button('a', 'one'),
     button('b', 'one/deep'),

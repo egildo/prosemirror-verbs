@@ -40,7 +40,7 @@ export type VerbArgs = Record<string, unknown>
 export interface DomainMember {
   value: string
   label?: string
-  short?: string
+  icon?: string
   keys?: string[]
 }
 
@@ -91,8 +91,16 @@ export const CAPABILITY_KEYS = new Set(['id', 'command', 'read', 'enabled', 'arg
 export interface VerbEntry extends Capability {
   /** Human name (menu, palette, button title). Absent ⇒ the naming layer derives one from the id. */
   label?: string
-  /** Compact toolbar face; a surface may curate by its absence. */
-  short?: string
+  /** The **name** of a picture — an icon font's, an SVG symbol's, a
+   *  stylesheet's. Never a glyph: a character pressed into service as a picture
+   *  is text pretending to be an icon, and it leaves an icon-only control with
+   *  no accessible name. Whoever draws it resolves the name; nothing here knows
+   *  what it means. A surface curates by its absence — no picture, no button. */
+  icon?: string
+  /** How to draw it, overriding what the control projection deduced from the
+   *  declaration's shape: `switch` for a toggle, `radio` for a choice, `menu`
+   *  for a section. A surface that does not know the word falls back. */
+  as?: string
   /** Chord(s) — duplicate chords within a composition are refused at build. */
   keys?: string[]
   /** Extra search terms for palette-grade consumers. */
@@ -200,7 +208,8 @@ export function composeVerbs(...sets: (VerbEntry | VerbEntry[])[]): Verb[] {
 /** The taste half of a verb: everything a host decides. Open by construction. */
 export interface VerbAttrs {
   label?: string
-  short?: string
+  icon?: string
+  as?: string
   keys?: string[]
   keywords?: string[]
   group?: string
@@ -345,7 +354,7 @@ interface BlocktypeMember extends DomainMember {
 
 // One verb, one enumerable domain. Block type is not seven verbs — it is one
 // verb over the domain of textblock markups the schema offers. Domain members
-// are data ({ value, label, short?, keys? }); the mapping from value to markup
+// are data ({ value, label, icon?, keys? }); the mapping from value to markup
 // stays in this closure. `read` is the verb's readback: which member is current.
 // Members past H3 carry chords but no compact face — curation by omission, the
 // same mechanism every surface already uses.
@@ -354,7 +363,7 @@ export function blocktypeVerb(schema: Schema): VerbEntry {
     schema.nodes.paragraph && {
       value: 'paragraph',
       label: 'Paragraph',
-      short: '¶',
+      icon: 'paragraph',
       keys: ['Shift-Mod-0'],
       type: schema.nodes.paragraph,
       attrs: null,
@@ -364,7 +373,7 @@ export function blocktypeVerb(schema: Schema): VerbEntry {
         schema.nodes.heading && {
           value: `h${level}`,
           label: `Heading ${level}`,
-          ...(level <= 3 ? { short: `H${level}` } : {}),
+          ...(level <= 3 ? { icon: `heading-${level}` } : {}),
           keys: [`Shift-Mod-${level}`],
           type: schema.nodes.heading,
           attrs: { level },
@@ -373,7 +382,7 @@ export function blocktypeVerb(schema: Schema): VerbEntry {
     schema.nodes.code_block && {
       value: 'code_block',
       label: 'Code block',
-      short: '⌨',
+      icon: 'code-block',
       keys: ['Shift-Mod-\\'],
       type: schema.nodes.code_block,
       attrs: null,
@@ -396,7 +405,7 @@ export function blocktypeVerb(schema: Schema): VerbEntry {
         name: 'blocktype',
         label: 'Block type',
         type: 'member',
-        domain: members.map(({ value, label, short, keys }) => ({ value, label, short, keys })),
+        domain: members.map(({ value, label, icon, keys }) => ({ value, label, icon, keys })),
       },
     ],
     read: (state: EditorState) =>
@@ -422,7 +431,7 @@ export function expand(verb: VerbEntry): VerbEntry[] {
     // capability with an ordinary id, which the cascade then names like any
     // other — so a plugin that ships no taste still expands cleanly.
     ...(member.label ? { label: member.label } : {}),
-    ...(member.short ? { short: member.short } : {}),
+    ...(member.icon ? { icon: member.icon } : {}),
     ...(member.keys ? { keys: member.keys } : {}),
     ...(verb.keywords ? { keywords: verb.keywords } : {}),
     ...(verb.group ? { group: verb.group } : {}),
@@ -438,7 +447,7 @@ export function wrapVerbs(schema: Schema): VerbEntry[] {
     schema.nodes.blockquote && {
       id: 'blockquote',
       label: 'Quote',
-      short: '❝',
+      icon: 'blockquote',
       command: wrapIn(schema.nodes.blockquote),
       read: (state: EditorState) => wrapDepth(state, schema.nodes.blockquote),
       keys: ['Mod->'],
@@ -448,7 +457,7 @@ export function wrapVerbs(schema: Schema): VerbEntry[] {
     schema.nodes.bullet_list && {
       id: 'bullet_list',
       label: 'Bullet list',
-      short: '•',
+      icon: 'list-bullet',
       command: wrapInList(schema.nodes.bullet_list),
       read: (state: EditorState) => wrapDepth(state, schema.nodes.bullet_list),
       keys: ['Shift-Mod-8'],
@@ -458,7 +467,7 @@ export function wrapVerbs(schema: Schema): VerbEntry[] {
     schema.nodes.ordered_list && {
       id: 'ordered_list',
       label: 'Ordered list',
-      short: '1.',
+      icon: 'list-ordered',
       command: wrapInList(schema.nodes.ordered_list),
       read: (state: EditorState) => wrapDepth(state, schema.nodes.ordered_list),
       keys: ['Shift-Mod-9'],
@@ -477,7 +486,7 @@ export function historyVerbs(): VerbEntry[] {
     {
       id: 'undo',
       label: 'Undo',
-      short: '↶',
+      icon: 'undo',
       command: undo,
       keys: ['Mod-z'],
       keywords: ['undo', 'history'],
@@ -486,7 +495,7 @@ export function historyVerbs(): VerbEntry[] {
     {
       id: 'redo',
       label: 'Redo',
-      short: '↷',
+      icon: 'redo',
       command: redo,
       keys: ['Shift-Mod-z', 'Mod-y'],
       keywords: ['redo', 'history'],

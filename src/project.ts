@@ -34,6 +34,8 @@ export interface ToolbarSpec {
   id: string
   label: string
   title: string
+  /** The name of a picture, for a surface that resolves names. */
+  icon?: string
   command: Command
   active?: (state: EditorState) => boolean
   keys?: string[]
@@ -53,13 +55,14 @@ export function toolbarSpecs(
   const sections = groupIds(groups)
     .map((group) =>
       verbs
-        .filter((verb) => verb.group === group && verb.short && (!verb.args || collect))
+        .filter((verb) => verb.group === group && verb.icon && (!verb.args || collect))
         .map((verb): ToolbarSpec => {
           const read = verb.read
           return {
             id: verb.id,
-            label: verb.short!,
+            label: verb.label ?? humanizeId(verb.id),
             title: verb.label ?? humanizeId(verb.id),
+            icon: verb.icon as string,
             command: verb.args ? collectingCommand(verb, collect!) : verb.run(),
             // The element's `active` is this surface's native rendering of any
             // readback domain: lit on truthy (a boolean directly, a count > 0).
@@ -82,30 +85,54 @@ export function toolbarSpecs(
 // which can only light or not light, and it is all a button surface can use.
 //
 // This projection keeps the domain. It reads the *shape* of a declaration and
-// names the control that fits it — nothing new is declared, the fork was always
-// in the data:
+// names what the verb **is** — nothing new is declared, the fork was always in
+// the data:
 //
-//   no args                              → button   (the face is `short`)
-//   one arg carrying a domain            → select   (`expand` is the other, equally
-//                                                    valid rendering of the same thing)
-//   one arg, no domain, a value readback → field    (show the value, edit it, commit)
-//   several args                         → button, collected modally as before
+//   no args, no readback                 → action   (a doing; needs an icon to appear)
+//   no args, a boolean readback          → toggle   (an action that is also a state)
+//   one arg carrying a domain            → choice   (a select, or a row of radios)
+//   one arg, no domain, a value readback → value    (show it, edit it, commit)
+//   several args                         → action, collected modally as before
 //
-// A field needs no Collector: the control *is* the collector, and asking is
-// what a field replaces. `command` stays dry-runnable on every kind, so one
-// uniform probe still answers availability; for a field or a select it is also
+// What it *is* is deduced and closed. How it is **drawn** is `as`, which
+// defaults from the kind and which a cascade layer may override — the split
+// that lets a toggle be a switch without the registry learning what a switch is.
+//
+// A value control needs no Collector: the control *is* the collector, and
+// asking is what it replaces. `command` stays dry-runnable on every kind, so one
+// uniform probe still answers availability; for a value or a choice it is also
 // the modal fallback for a chord or a palette, which have no control to read.
+
+/** What a verb *is*, deduced from its declaration. Never written by a host. */
+export type ControlKind = 'action' | 'toggle' | 'choice' | 'value'
+
+/** How each kind is drawn when nobody says otherwise. */
+const DEFAULT_AS: Record<ControlKind, string> = {
+  action: 'button',
+  toggle: 'button',
+  choice: 'select',
+  value: 'field',
+}
 
 /** What a control-grade surface eats: one control, or a section separator. */
 export interface ControlSpec {
   /** Unique within the strip. */
   id: string
-  /** How to draw it. A button-only surface may render every kind as a button. */
-  kind: 'button' | 'field' | 'select'
-  /** The face: a button's glyph, a field's tag, a select's accessible name. */
+  /** What it **is** — a fact about the declaration, deduced, never declared. */
+  kind: ControlKind
+  /** How to **draw** it. Defaults from `kind`; a cascade layer may say otherwise
+   *  (`as: 'switch'`, `as: 'radio'`). A surface that does not know a word falls
+   *  back to the kind's default — a typo costs a switch, never a control. */
+  as: string
+  /** The words: what a default rendering draws and what a screen reader says. */
   label: string
-  /** The human name, for a tooltip. */
+  /** The human name, for a tooltip. Differs from `label` only where a compact
+   *  tag and a full name differ — a field's "px" against "Column width". */
   title: string
+  /** The **name** of a picture, resolved by whoever draws it — an icon font, an
+   *  SVG symbol, a stylesheet. Meaningless here, and deliberately so. Its
+   *  absence is curation for the kinds that need a face: no icon, no button. */
+  icon?: string
   /** Dry-runnable availability — and, for a button, what a click runs. */
   command: Command
   /** Lit-ness, for kinds that light. Buttons only. */
@@ -126,28 +153,43 @@ export interface ControlSpec {
 }
 export type ControlItem = ControlSpec | { separator: true }
 
-// The shape reading, alone. `null` means "this verb has no control here" — the
-// same curation-by-omission the toolbar projection applies through `short`.
-function controlKind(verb: Verb): ControlSpec['kind'] | null {
-  if (!verb.args) return verb.short ? 'button' : null
-  if (verb.args.length === 1 && verb.args[0]!.domain) return 'select'
-  if (verb.args.length === 1 && verb.read) return 'field'
-  return verb.short ? 'button' : null
+// The shape reading, alone — and it reads the declaration, never a preference.
+// `null` means "this verb has no control here": curation by omission, through
+// the absence of an icon, exactly where the absence of a compact face used to
+// do it. A verb with no picture to wear is one a host did not promote; it stays
+// in the register, reachable by chord and by palette.
+//
+// A **toggle** is an action with a readback — free, and the one distinction the
+// old three kinds could not make, which is why a switch was undrawable.
+function controlKind(verb: Verb): ControlKind | null {
+  const faced = verb.icon ? (verb.read ? 'toggle' : 'action') : null
+  if (!verb.args) return faced
+  if (verb.args.length === 1 && verb.args[0]!.domain) return 'choice'
+  if (verb.args.length === 1 && verb.read) return 'value'
+  return verb.icon ? 'action' : null
 }
 
 function toControl(verb: Verb, collect?: Collector): ControlSpec | null {
   const kind = controlKind(verb)
   if (!kind) return null
   const read = verb.read
-  if (kind === 'button') {
+  // Taste may say how to draw it; the kind says how to draw it by default.
+  const drawn = typeof verb.as === 'string' ? verb.as : DEFAULT_AS[kind]
+  if (kind === 'action' || kind === 'toggle') {
     // Multi-arg buttons still need someone to ask; without a collector they
     // stay declared, not collected — the toolbar projection's own rule.
     if (verb.args && !collect) return null
     return passthrough(verb, {
       id: verb.id,
       kind,
-      label: verb.short!,
+      as: drawn,
+      // The words, always — a default rendering draws them, a templated one
+      // may hide them behind a picture, and a screen reader gets them either
+      // way. What used to sit here was a glyph, which was text pretending to
+      // be an icon and left an icon-only control with no accessible name.
+      label: verb.label ?? humanizeId(verb.id),
       title: verb.label ?? humanizeId(verb.id),
+      icon: verb.icon as string,
       command: verb.args ? collectingCommand(verb, collect!) : verb.run(),
       ...(read ? { active: (state: EditorState) => !!read(state) } : {}),
       ...(verb.keys ? { keys: verb.keys } : {}),
@@ -157,13 +199,15 @@ function toControl(verb: Verb, collect?: Collector): ControlSpec | null {
   return passthrough(verb, {
     id: verb.id,
     kind,
+    as: drawn,
+    ...(verb.icon ? { icon: verb.icon as string } : {}),
     // A field wears the argument's own label where one was declared — the very
     // words a prompting collector would have asked with — and otherwise the
     // verb's, which is the cascade's and so the host's. That fallback is what
     // lets a host name a field at all: `args` is a capability key, closed to
     // layers, so a label buried in it would be the one piece of taste no
     // attribute could reach.
-    label: (kind === 'field' ? arg.label : undefined) ?? verb.label ?? humanizeId(verb.id),
+    label: (kind === 'value' ? arg.label : undefined) ?? verb.label ?? humanizeId(verb.id),
     title: verb.label ?? humanizeId(verb.id),
     // Availability without collecting: a factory cannot be dry-run, so the
     // gate is the verb's own. With a collector, a real run still asks —
@@ -175,7 +219,7 @@ function toControl(verb: Verb, collect?: Collector): ControlSpec | null {
     },
     ...(read ? { value: read } : {}),
     write: (value: unknown) => verb.run({ [arg.name]: value }),
-    ...(kind === 'select' ? { options: arg.domain } : {}),
+    ...(kind === 'choice' ? { options: arg.domain } : {}),
     ...(arg.type ? { type: arg.type } : {}),
     ...(verb.keys ? { keys: verb.keys } : {}),
   })
@@ -186,7 +230,7 @@ function toControl(verb: Verb, collect?: Collector): ControlSpec | null {
 // this package has never heard and has no business dropping on the floor
 // between the verb that carries them and the element that acts on them. What
 // the projection has already decided for itself stands; everything else rides.
-const SPEC_OWNED = new Set(['label', 'short', 'keys', 'keywords'])
+const SPEC_OWNED = new Set(['label', 'icon', 'as', 'keys', 'keywords'])
 function passthrough(verb: Verb, spec: ControlSpec): ControlSpec {
   const out: Record<string, unknown> = { ...spec }
   for (const key of Object.keys(verb)) {
@@ -210,8 +254,12 @@ export interface GroupSpec {
   id: string
   /** Absent ⇒ derived from the id, the way a verb's label is. */
   label?: string
-  /** The face a collapsed rendering wears — a dropdown's button, a page's icon. */
-  short?: string
+  /** The name of the picture a collapsed rendering wears. */
+  icon?: string
+  /** How to draw the section: `inline` (children with separators, the strip's
+   *  own arrangement) or `menu` (collapsed behind its own face). Defaults to
+   *  `inline`; the same `as` vocabulary as a leaf, one altitude up. */
+  as?: string
   /** Absent ⇒ derived from a `/` path in the id, if there is one. */
   parent?: string
 }
@@ -238,7 +286,9 @@ const groupLabel = (spec: GroupSpec): string =>
 export interface ControlGroup {
   group: string
   label: string
-  short?: string
+  /** How to draw the section — `inline` unless the section list said otherwise. */
+  as: string
+  icon?: string
   items: TreeItem[]
 }
 export type TreeItem = ControlSpec | ControlGroup
@@ -292,7 +342,8 @@ export function controlTree(
     built.set(spec.id, {
       group: spec.id,
       label: groupLabel(spec),
-      ...(spec.short ? { short: spec.short } : {}),
+      as: spec.as ?? 'inline',
+      ...(spec.icon ? { icon: spec.icon } : {}),
       items: verbs
         .filter((verb) => verb.group === spec.id)
         .map((verb) => toControl(verb, collect))

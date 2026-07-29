@@ -118,10 +118,10 @@ describe('expand', () => {
     expect(Object.keys(forms[0]!).sort()).toEqual(['command', 'id', 'read'])
     expect(forms[1]!.read!(state)).toBe(true)
     const { verbs } = applyAttrs(composeVerbs(forms), [
-      { name: 'host', attrs: (verb) => (verb.id.endsWith(':foot') ? { label: 'Footer rows', short: '⊥' } : {}) },
+      { name: 'host', attrs: (verb) => (verb.id.endsWith(':foot') ? { label: 'Footer rows', icon: '⊥' } : {}) },
     ])
     expect(verbs.map((verb) => verb.label)).toEqual(['Head', 'Footer rows']) // derived, then named
-    expect(verbs[1]!.short).toBe('⊥')
+    expect(verbs[1]!.icon).toBe('⊥')
   })
 })
 
@@ -142,20 +142,20 @@ describe('applyAttrs — the host dresses what the plugin declared', () => {
 
   it('layers resolve in order, later winning per key', () => {
     const { verbs } = dress(capability, [
-      { name: 'house', attrs: { label: 'Insert row', group: 'table', short: '⊕' } },
-      { name: 'venue', attrs: { short: '⊕↓' } },
+      { name: 'house', attrs: { label: 'Insert row', group: 'table', icon: '⊕' } },
+      { name: 'venue', attrs: { icon: '⊕↓' } },
     ])
     expect(verbs[0]!.label).toBe('Insert row') // beat the naming default
-    expect(verbs[0]!.short).toBe('⊕↓') // beat the house layer
+    expect(verbs[0]!.icon).toBe('⊕↓') // beat the house layer
     expect(verbs[0]!.group).toBe('table') // untouched by the later layer
   })
 
   it("the declaration is a layer too — it beats the naming default and loses to the host", () => {
-    const declaring: VerbEntry = { id: 'x', label: 'Declared', short: 'D', command: noop }
+    const declaring: VerbEntry = { id: 'x', label: 'Declared', icon: 'D', command: noop }
     expect(dress(declaring).verbs[0]!.label).toBe('Declared')
     const overridden = dress(declaring, [{ name: 'venue', attrs: { label: 'Host says' } }])
     expect(overridden.verbs[0]!.label).toBe('Host says')
-    expect(overridden.verbs[0]!.short).toBe('D') // what the host left alone still stands
+    expect(overridden.verbs[0]!.icon).toBe('D') // what the host left alone still stands
   })
 
   it('matches by exact id, by prefix glob, and by predicate', () => {
@@ -258,10 +258,16 @@ describe('applyAttrs — the host dresses what the plugin declared', () => {
 
   it('a dressed register feeds the projections it always fed', () => {
     const { verbs } = applyAttrs(composeVerbs({ id: 'table:add-row-after', command: noop }), [
-      { name: 'venue', attrs: { short: '⊕↓', group: 'table' } },
+      { name: 'venue', attrs: { icon: 'row-add-after', group: 'table' } },
     ])
     const [spec] = toolbarSpecs(verbs, 'table')
-    expect(spec).toMatchObject({ id: 'table:add-row-after', label: '⊕↓', title: 'Add row after' })
+    // The words are the label; the picture is a *name* somebody else resolves.
+    expect(spec).toMatchObject({
+      id: 'table:add-row-after',
+      label: 'Add row after',
+      title: 'Add row after',
+      icon: 'row-add-after',
+    })
   })
 })
 
@@ -272,7 +278,7 @@ describe('controlSpecs — the shape names the control', () => {
       (item): item is ControlSpec => !('separator' in item),
     )
 
-  const plain: VerbEntry = { id: 'plain', label: 'Plain', short: 'P', command: noop, group: 'g' }
+  const plain: VerbEntry = { id: 'plain', label: 'Plain', icon: 'P', command: noop, group: 'g' }
   const field: VerbEntry = {
     id: 'field',
     label: 'Field verb',
@@ -293,26 +299,46 @@ describe('controlSpecs — the shape names the control', () => {
   const pair: VerbEntry = {
     id: 'pair',
     label: 'Two args',
-    short: '⊞',
+    icon: 'table-insert',
     command: () => noop,
     args: [{ name: 'x', label: 'X' }, { name: 'y', label: 'Y' }],
     group: 'g',
   }
 
-  it('reads button, field and select off the declaration alone', () => {
+  it('reads what each verb *is* off the declaration alone', () => {
     const specs = controls(composeVerbs(plain, field, select))
-    expect(specs.map((spec) => [spec.id, spec.kind])).toEqual([
-      ['plain', 'button'],
-      ['field', 'field'],
-      ['select', 'select'],
+    expect(specs.map((spec) => [spec.id, spec.kind, spec.as])).toEqual([
+      // `plain` has no readback: a doing, nothing more.
+      ['plain', 'action', 'button'],
+      ['field', 'value', 'field'],
+      ['select', 'choice', 'select'],
     ])
+  })
+
+  it('separates a toggle from an action — the distinction a switch needs', () => {
+    // Same declaration plus a boolean readback. Free, and undrawable before:
+    // three kinds could not tell "a doing" from "a doing that is also a state".
+    const toggle: VerbEntry = { ...plain, id: 'toggle', read: () => true }
+    const [spec] = controls(composeVerbs(toggle))
+    expect(spec!.kind).toBe('toggle')
+    expect(spec!.as).toBe('button')
+    expect(spec!.active!(state)).toBe(true)
+  })
+
+  it('lets taste say how to draw it, without the registry learning what that is', () => {
+    const { verbs } = applyAttrs(composeVerbs({ ...plain, id: 'toggle', read: () => true }), [
+      { name: 'chrome', match: 'toggle', attrs: { as: 'switch' } },
+    ])
+    const [spec] = controls(verbs)
+    expect(spec!.kind).toBe('toggle') // the fact is unmoved
+    expect(spec!.as).toBe('switch') // the drawing is the host's
   })
 
   it('keeps the readback whole — the domain the toolbar projection throws away', () => {
     const [spec] = controls(composeVerbs(field))
     expect(spec!.value!(state)).toBe('standing')
     // The same verb, projected for a strip of buttons, can only say "lit".
-    const [flat] = toolbarSpecs(composeVerbs({ ...field, short: 'F' }), 'g', { collect: ask })
+    const [flat] = toolbarSpecs(composeVerbs({ ...field, icon: 'F' }), 'g', { collect: ask })
     expect((flat as { active: (s: unknown) => boolean }).active(state)).toBe(true)
   })
 
@@ -361,8 +387,9 @@ describe('controlSpecs — the shape names the control', () => {
   it('a multi-arg verb stays a modal button, and needs a collector to appear', () => {
     expect(controls(composeVerbs(pair))).toEqual([])
     const [spec] = controls(composeVerbs(pair), ask)
-    expect(spec!.kind).toBe('button')
-    expect(spec!.label).toBe('⊞')
+    expect(spec!.kind).toBe('action')
+    expect(spec!.label).toBe('Two args')
+    expect(spec!.icon).toBe('table-insert')
   })
 
   it('omits what has no control: no args and no face, or an argument with nothing to show', () => {

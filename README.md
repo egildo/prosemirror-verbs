@@ -20,12 +20,13 @@ An entry has two halves, and the line between them is the doctrine (tablet V12).
 }
 ```
 
-**The taste** is what only the host can know — what to call it, which glyph it wears, which chord answers to it, where it sits. It may ride on the entry (this package's own starter sets do, being host-side furniture), but it belongs to the host, which writes it as a **cascade of layers** (tablet V13) and wins every disagreement:
+**The taste** is what only the host can know — what to call it, which picture it wears, which chord answers to it, where it sits. It may ride on the entry (this package's own starter sets do, being host-side furniture), but it belongs to the host, which writes it as a **cascade of layers** (tablet V13) and wins every disagreement:
 
 ```js
 {
   label:    'Bold',                            // human name — absent ⇒ derived from the id
-  short:    'B',                               // compact toolbar face; its absence is curation
+  icon:     'bold',                            // the NAME of a picture; its absence is curation
+  as:       'switch',                          // how to draw it, overriding what the shape implied
   keys:     ['Mod-b'],                         // chord(s) → the keyboard
   keywords: ['bold', 'strong'],                // extra search terms → palette
   group:    'marks',                           // category → surface curation
@@ -119,18 +120,23 @@ The API grants pure, single-sourced computation; a consumer projects it into its
 - `composeKeyboard(verbs, policies, { collect })` — the whole keyboard as an ordered stack of layers (tablet, *the stack of courts*). The verb **chords** come first, flat-gated (a duplicate chord within the layer is a build error; arg-verbs bind through the collector when one is supplied, and are skipped otherwise); then the host's **policies** in the order given — `{ name, bindings }`, where a policy is one key carrying a chain resolved by position (Enter), the base keymap seated openly as the last of them. Returns `{ plugins, describe, audit }`: `plugins` is the ordered keymap plugins for the editor; `describe(key, state?)` answers who claims a key, in layer order, and — given a state — dry-runs the claimants to say who takes it now; `audit()` is the sweep — every key with more than one claimant across the stack, reported for the host's eye after composing a new plugin in, refusing nothing (cross-layer shadowing is the mechanism). Describe's honest limit: it sees layers and claims, never inside an imported `chainCommands`.
 - `toKeymap(verbs, { collect })` — the verb chord layer alone, for hosts that keep their other keymaps out of the composition.
 - `collectingCommand(verb, collect)` — the sync collector's wrap: an arg-verb as a plain dispatch-guarded command (see Arguments). `composeKeyboard` and `toolbarSpecs` apply it automatically when given `{ collect }`.
-- `toolbarSpecs(verbs, groups, { collect })` — the shape a toolbar-grade surface eats, curated to an ordered list of groups with a separator marker between sections; filtered to entries with a `short` face; arg-verbs included only when `collect` is supplied. The spec's `active` is derived from `read` by truthiness (a boolean directly, a count when > 0) — the surface's native rendering of any domain. Each spec carries its `keys` so a surface can show chords. One-of-N forms render as honest radio: lit when current, no-op when pressed again (the toggle-back question is open — tablet, *the default member*).
+- `toolbarSpecs(verbs, groups, { collect })` — the shape a toolbar-grade surface eats, curated to an ordered list of groups with a separator marker between sections; filtered to entries carrying an `icon` name; arg-verbs included only when `collect` is supplied. The spec's `active` is derived from `read` by truthiness (a boolean directly, a count when > 0) — the surface's native rendering of any domain. Each spec carries its `keys` so a surface can show chords. One-of-N forms render as honest radio: lit when current, no-op when pressed again (the toggle-back question is open — tablet, *the default member*).
 - `controlTree(verbs, groups, { collect })` — **the register with its structure kept**: sections in the order given, nested, each holding the controls of the verbs assigned to it. Returns `{ items, audit() }`. A section with nothing in it — and no child that has anything — does not appear, which is how availability-hiding generalises from a separator to a whole group. See *Sections* below.
 - `controlSpecs(verbs, groups, { collect })` — a **flat strip**: the tree walked depth-first, with a separator between top-level sections. This is a *view* of `controlTree`, which is the point — the flat arrangement is one layout among several rather than the only answer the projection can give.
 
 Both control projections read a verb's **shape** and name the control it already implies. Nothing extra is declared; the fork was always in the data:
 
-| the declaration | the control |
-|---|---|
-| no args | **button** — the face is `short`; no `short`, no control |
-| one arg carrying a domain | **select** — `expand` is the other, equally valid rendering |
-| one arg, no domain, a value readback | **field** — show the value, edit it, commit through `write` |
-| several args | **button**, collected modally, and only when `collect` is supplied |
+| the declaration | `kind` | default `as` |
+|---|---|---|
+| no args, no readback | **action** — a doing. Needs an `icon` to appear at all | `button` |
+| no args, a boolean readback | **toggle** — a doing that is also a state | `button`, or `switch` |
+| one arg carrying a domain | **choice** — `expand` is the other, equally valid rendering | `select`, or `radio` |
+| one arg, no domain, a value readback | **value** — show it, edit it, commit through `write` | `field` |
+| several args | **action**, collected modally, and only when `collect` is supplied | `button` |
+
+**`kind` is a fact and `as` is taste** (tablet V15). The kind is deduced and closed; the drawing defaults from it and a cascade layer overrides it — and that needs nothing new, because `passthrough` has always carried a non-capability attribute through to the spec. A surface that does not know an `as` falls back to the kind's default: a typo costs a switch, never a control.
+
+Sections take `as` too — `inline` or `menu` — which is what makes a dropdown, a palette with headings and a page you descend into four layouts of one tree rather than three features.
 
 A field needs no `Collector`: the control *is* the collector, and asking is what a field replaces. `command` stays dry-runnable on every kind, so one uniform probe answers availability — and for a field or a select it doubles as the modal fallback a chord or a palette needs, having no control to read.
 - `formatKeys(key, { mac })` — a chord for humans: `Mod-b` → `⌘B` or `Ctrl+B`. Pure string work; the platform is the caller's conf, so the registry stays free of the DOM.
@@ -144,7 +150,7 @@ More projections (`paletteItems`, a `toolManifest` for agent consumers) join as 
 ```js
 const GROUPS = [
   { id: 'marks',  label: 'Format' },
-  { id: 'table',  label: 'Table', short: '⊞' },
+  { id: 'table',  label: 'Table', icon: 'table', as: 'menu' },
   { id: 'table/rows' },                  // nests under 'table'; label derived: "Rows"
   { id: 'history', label: 'History' },
 ]
@@ -153,6 +159,7 @@ const GROUPS = [
 - **Order is array position.** There is no ordering field and no need for one: VS Code needs `"navigation@1"` because its contributions arrive from manifests it cannot order, and a host writing one array does not (tablet V10 — refusal is a luxury of host-scale composition, and so is ordering).
 - **Nesting** comes from `parent`, or from a `/` path in the id when none is given. A path whose parent nobody declared becomes a root rather than vanishing.
 - **`label` absent** falls back to the last path segment, humanized — the sibling of how an unnamed verb gets called after its id.
+- **`as`** is `inline` (children as siblings, the strip's own arrangement) or `menu` (collapsed behind its own face). Same vocabulary as a leaf, one altitude up.
 - **Only declared sections appear.** A verb whose group nobody asked for is still in the register, still reachable by chord and by palette, and simply has no seat in this chrome.
 
 The rule this encodes (tablet V14): **taste about a verb lives in the cascade; taste about a section lives in the section list.** Which section a verb belongs to is an opinion about that verb, so a layer can override it; what the sections *are* is not about any verb at all.
@@ -206,7 +213,7 @@ export const tableCapabilities = (schema) =>
     ? [{ id: 'table:add-row-after', command: addRowAfter } /* … */]
     : [] // a set guards its nouns
 export const tableKeys = (schema) => ({ 'Tab': goToNextCell(1), 'Shift-Tab': goToNextCell(-1) })
-export const tableTaste = { 'table:add-row-after': { label: 'Add row after', short: '⊕↓' } }
+export const tableTaste = { 'table:add-row-after': { label: 'Add row after', icon: 'row-add-after' } }
 
 // in the host — one more argument to each act, and an audit to eyeball the stack
 const registry = applyAttrs(composeVerbs(basicVerbs(schema), tableCapabilities(schema)), [
