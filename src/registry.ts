@@ -13,10 +13,9 @@
 // on prosemirror-*.
 
 import { keymap } from 'prosemirror-keymap'
-import { toggleMark, setBlockType, wrapIn } from 'prosemirror-commands'
+import { setBlockType, wrapIn } from 'prosemirror-commands'
 import { wrapInList } from 'prosemirror-schema-list'
 import { undo, redo } from 'prosemirror-history'
-import { insertPoint } from 'prosemirror-transform'
 import type { Command, EditorState, Plugin } from 'prosemirror-state'
 import type { Attrs, MarkType, NodeType, Schema } from 'prosemirror-model'
 
@@ -330,78 +329,13 @@ export function applyAttrs(verbs: Verb[], layers: AttrLayer[] = []): Attributed 
   }
 }
 
-// ── Starter sets ─────────────────────────────────────────────────────────────
-
-// The package's default verbs — marks basics, the way prosemirror-schema-basic
-// ships a starter set of nodes and marks. A host may write its own entries
-// instead. A mark's readback is boolean: membership in the mark set is the
-// whole domain. Every set guards its nouns: entries whose types are absent
-// from the schema are not returned.
-export function basicVerbs(schema: Schema): VerbEntry[] {
-  const entries: (VerbEntry | undefined)[] = [
-    schema.marks.strong && {
-      id: 'strong',
-      label: 'Bold',
-      short: 'B',
-      command: toggleMark(schema.marks.strong),
-      read: (state: EditorState) => markActive(state, schema.marks.strong),
-      keys: ['Mod-b'],
-      keywords: ['bold', 'strong'],
-      group: 'marks',
-    },
-    schema.marks.em && {
-      id: 'em',
-      label: 'Italic',
-      short: 'I',
-      command: toggleMark(schema.marks.em),
-      read: (state: EditorState) => markActive(state, schema.marks.em),
-      keys: ['Mod-i'],
-      keywords: ['italic', 'emphasis'],
-      group: 'marks',
-    },
-    schema.marks.code && {
-      id: 'code',
-      label: 'Code',
-      short: '</>',
-      command: toggleMark(schema.marks.code),
-      read: (state: EditorState) => markActive(state, schema.marks.code),
-      keys: ['Mod-`'],
-      keywords: ['code', 'monospace'],
-      group: 'marks',
-    },
-    // A verb that takes an argument: its `command` is a factory (args ⟹ factory);
-    // `enabled` is explicit because a factory can't be dry-run without its arguments.
-    schema.marks.link && {
-      id: 'link',
-      label: 'Link',
-      short: '🔗',
-      command: (args: VerbArgs) => toggleMark(schema.marks.link, { href: args.href as string }),
-      args: [{ name: 'href', label: 'URL', type: 'url' }],
-      // The command's own dry run, not a hand-written guess at it. "Not empty"
-      // was wider than the truth: a NodeSelection on an atom that carries no
-      // marks is not empty either, so the URL field turned up over a
-      // spreadsheet cell. Dimming hid that; hiding made every loose gate
-      // visible at once (venue finding, 2026-07-28) — and the rule from
-      // yesterday applies again: a gate must not be wider than the command.
-      enabled: (state: EditorState) => toggleMark(schema.marks.link)(state),
-      // The readback is the href you stand in — a value domain. It lights the
-      // toolbar face inside a link, and a collector prefills from it. A range
-      // reads forward ($from.marks() at a link's start boundary would read the
-      // unlinked character before it).
-      read: (state: EditorState) => {
-        const { $from, empty } = state.selection
-        const marks = empty
-          ? state.storedMarks || $from.marks()
-          : ($from.nodeAfter?.marks ?? $from.marks())
-        return schema.marks.link.isInSet(marks)?.attrs.href ?? null
-      },
-      keys: ['Mod-k'],
-      keywords: ['link', 'url', 'href'],
-      group: 'marks',
-    },
-  ]
-  return entries.filter((entry): entry is VerbEntry => Boolean(entry))
-}
+// ── Starter sets, declared ───────────────────────────────────────────────────
+//
+// Hand-written entries, the way prosemirror-schema-basic ships a starter set of
+// nodes and marks; a host may write its own instead. The sets that are *derived*
+// from the schema rather than declared — marks, inserts — live in derive.ts.
+// Every set guards its nouns: entries whose types are absent from the schema
+// given are not returned.
 
 interface BlocktypeMember extends DomainMember {
   type: NodeType
@@ -904,48 +838,4 @@ export function controlSpecs(
   return sections.flatMap((section, i): ControlItem[] =>
     i ? [{ separator: true }, ...section] : section,
   )
-}
-
-// ── Derived verbs ────────────────────────────────────────────────────────────
-
-// A capability, not a declaration: insert a fresh node of `type`, wherever the schema
-// allows one near the cursor. `insertPoint` is ProseMirror's own "can this node go
-// here" query — the noun-equivalent of a command's dry run. Called without dispatch it
-// answers availability (position-aware); called with dispatch it inserts.
-const insertNode = (type: NodeType, attrs?: Attrs): Command => (state, dispatch) => {
-  const point = insertPoint(state.doc, state.selection.from, type)
-  if (point == null) return false
-  const node = type.createAndFill(attrs)
-  if (!node) return false
-  if (dispatch) dispatch(state.tr.insert(point, node).scrollIntoView())
-  return true
-}
-
-// A node's required attributes (those its spec gives no default) become an arg-schema —
-// the schema's own requirements, read back as what a collector must ask for.
-const requiredArgs = (type: NodeType): VerbArg[] =>
-  Object.entries(type.spec.attrs || {})
-    .filter(([, attr]) => !('default' in attr))
-    .map(([name]) => ({ name, type: 'text' }))
-
-// Derivation → verbs from the noun-Schema. One insert-verb per node type: the
-// possibility engine pointed at nouns rather than at commands. Every entry's command
-// consults insertPoint, so availability is position-aware and needs no separate
-// `enabled`. A node with required attrs (image → src) becomes an arg-insert — declared
-// with its derived arg-schema, skipped by surfaces exactly like link, until a collector
-// exists. `doc` and text are not insertable-node candidates and are left out.
-export function insertVerbs(schema: Schema): VerbEntry[] {
-  return Object.values(schema.nodes)
-    .filter((type) => type !== schema.topNodeType && !type.isText)
-    .map((type) => {
-      const req = requiredArgs(type)
-      return {
-        id: `insert:${type.name}`,
-        label: `Insert ${type.name.replace(/_/g, ' ')}`,
-        group: 'insert',
-        ...(req.length
-          ? { command: (args: VerbArgs) => insertNode(type, args as Attrs), args: req }
-          : { command: insertNode(type) }),
-      }
-    })
 }

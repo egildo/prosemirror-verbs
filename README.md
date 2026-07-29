@@ -86,8 +86,28 @@ Plugin state is the other readback source — a verb just writes its predicate o
 
 ## Sources of verbs
 
-- **Declared** — `basicVerbs(schema)` (the marks: bold, italic, code, link), `wrapVerbs(schema)` (blockquote, bullet list, ordered list), `historyVerbs()` (undo, redo). Hand-written starter sets, the way `prosemirror-schema-basic` ships starter nouns; a host may write its own entries instead.
-- **Derived** — `insertVerbs(schema)` computes one *insert X* verb per node type from the schema itself, using `insertPoint` to answer "can this node go here?" (tablet V3).
+- **Declared** — `wrapVerbs(schema)` (blockquote, bullet list, ordered list), `historyVerbs()` (undo, redo). Hand-written starter sets, the way `prosemirror-schema-basic` ships starter nouns; a host may write its own entries instead.
+- **Derived** — the verb-Schema reading the noun-Schema (tablet V3), in `derive.ts`:
+  - `markVerbs(schema)` — one capability per mark. No required attrs ⇒ a toggle with a boolean readback; a mark carrying an attribute the spec gives no default (a link's `href`) ⇒ an **arg-verb** whose readback is the value you stand in and whose gate is the command's own dry run.
+  - `insertVerbs(schema)` — one *insert X* per node type, `insertPoint` answering "can this node go here?" position-aware, required attrs becoming the arg-schema.
+  - `basicVerbs(schema)` — `markVerbs` dressed in the conventional taste (Bold/B/`Mod-b`, and the fact that an href is a URL, which no schema says). The starter set is now derived rather than hand-listed, so a schema carrying an underline gets it for free, with the same readback and the same gate as the four anyone thought about.
+
+### What derivation can't know, and the `authoring` hint
+
+The schema declares what is **grammatically legal**, never what is **legitimately user-creatable**. A table row is legal inside a table body, so `insertPoint` finds a spot — and a derived insert verb will put a raw row into somebody's spreadsheet, past every command its owner wrote. So the plugin that owns a noun says so, on the NodeSpec, under the allowance `tableRole` already uses:
+
+```js
+table: {
+  content: 'caption? row+',
+  authoring: {
+    sealed: true,     // every type reachable only through me is mine — derive nothing for it
+    insert: false,    // …and not mine either; I declare my own
+    // insert: (type) => myInsertCommand(type)   // …or derive it, but build it with this
+  },
+}
+```
+
+This is a **capability fact, not taste**: no second editor could reasonably disagree that a table cell is not a top-level insert — which is exactly V12's test, run the other way. `sealed` states the cause once instead of the consequence on every interior spec; `interiorTypes(schema)` returns what it computed, because a whole-schema rule has to stay inspectable rather than magic. And `sealed` is **not** `isolating`, which it will often sit beside: that one governs whether selection and deletion cross a boundary.
 - **Declared once, expanded** — `blocktypeVerb(schema)` is *one* verb over the enumerable domain of textblock markups (paragraph, heading 1–6, code block). `expand(verb)` curries it into per-member no-arg forms — `blocktype:h2` with its face, chords, and a boolean `read` derived from the verb's member-valued one — that every projection eats unchanged (tablet V9, pinned). Hosts keep both: the verb for arg-taking consumers, the forms for keymap and toolbar.
 
 All of it meets in the one act: `composeVerbs(basicVerbs(schema), blocktype, expand(blocktype), wrapVerbs(schema), historyVerbs(), insertVerbs(schema))`.

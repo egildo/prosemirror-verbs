@@ -5,12 +5,12 @@
 // consumers (a console rig, a test, an agent) all project the same list. Nothing
 // here touches the DOM or knows a surface exists.
 
+// The contract, the two host acts, the keyboard, the projections, and the
+// starter sets that are hand-declared.
 export {
-  basicVerbs,
   blocktypeVerb,
   wrapVerbs,
   historyVerbs,
-  insertVerbs,
   expand,
   composeVerbs,
   composeKeyboard,
@@ -48,3 +48,9 @@ export type {
   ControlSpec,
   ControlItem,
 } from './registry.js'
+
+// Derived: what the verb-Schema reads off the noun-Schema. `interiorTypes` is
+// exported because the sealed closure is a whole-schema property and must stay
+// inspectable rather than magic.
+export { markVerbs, insertVerbs, basicVerbs, interiorTypes } from './derive.js'
+export type { Authoring } from './derive.js'
