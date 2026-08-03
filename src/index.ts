@@ -58,6 +58,7 @@ export type {
   TreeItem,
   GroupSpec,
   GroupList,
+  FaceRule,
 } from './project.js'
 
 // Relations: what the register knows about itself. Facts, derived — never

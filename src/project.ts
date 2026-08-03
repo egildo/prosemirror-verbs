@@ -153,24 +153,35 @@ export interface ControlSpec {
 }
 export type ControlItem = ControlSpec | { separator: true }
 
+/** What counts as a face on this surface, and so what a control needs to exist.
+ *
+ *  `icon` — a picture, or no control. A strip's rule, and the default: a verb
+ *  with no picture to wear is one this host did not promote.
+ *
+ *  `words` — the label, which every verb has. **A palette's rule.** Curation by
+ *  omission does not disappear; it moves to where a palette can still express
+ *  it, which for the venue is `manner`. This is the promise V15 already made —
+ *  an unpromoted verb "stays in the register, reachable by chord and by
+ *  palette" — and until this option there was no way for a palette to reach it. */
+export type FaceRule = 'icon' | 'words'
+
 // The shape reading, alone — and it reads the declaration, never a preference.
 // `null` means "this verb has no control here": curation by omission, through
-// the absence of an icon, exactly where the absence of a compact face used to
-// do it. A verb with no picture to wear is one a host did not promote; it stays
-// in the register, reachable by chord and by palette.
+// the absence of a face — which face counts being the surface's own question.
 //
 // A **toggle** is an action with a readback — free, and the one distinction the
 // old three kinds could not make, which is why a switch was undrawable.
-function controlKind(verb: Verb): ControlKind | null {
-  const faced = verb.icon ? (verb.read ? 'toggle' : 'action') : null
+function controlKind(verb: Verb, face: FaceRule): ControlKind | null {
+  const hasFace = face === 'words' || !!verb.icon
+  const faced = hasFace ? (verb.read ? 'toggle' : 'action') : null
   if (!verb.args) return faced
   if (verb.args.length === 1 && verb.args[0]!.domain) return 'choice'
   if (verb.args.length === 1 && verb.read) return 'value'
-  return verb.icon ? 'action' : null
+  return hasFace ? 'action' : null
 }
 
-function toControl(verb: Verb, collect?: Collector): ControlSpec | null {
-  const kind = controlKind(verb)
+function toControl(verb: Verb, collect?: Collector, face: FaceRule = 'icon'): ControlSpec | null {
+  const kind = controlKind(verb, face)
   if (!kind) return null
   const read = verb.read
   // Taste may say how to draw it; the kind says how to draw it by default.
@@ -322,7 +333,7 @@ export const isGroup = (item: TreeItem): item is ControlGroup => 'items' in item
 export function controlTree(
   verbs: Verb[],
   groups: GroupList,
-  { collect }: { collect?: Collector } = {},
+  { collect, face = 'icon' }: { collect?: Collector; face?: FaceRule } = {},
 ): ControlTree {
   const specs = asSpecs(groups)
   const declared = new Set(specs.map((spec) => spec.id))
@@ -346,7 +357,7 @@ export function controlTree(
       ...(spec.icon ? { icon: spec.icon } : {}),
       items: verbs
         .filter((verb) => verb.group === spec.id)
-        .map((verb) => toControl(verb, collect))
+        .map((verb) => toControl(verb, collect, face))
         .filter((control): control is ControlSpec => control !== null),
     })
   }
@@ -403,11 +414,11 @@ export function controlTree(
 export function controlSpecs(
   verbs: Verb[],
   groups: GroupList,
-  { collect }: { collect?: Collector } = {},
+  { collect, face }: { collect?: Collector; face?: FaceRule } = {},
 ): ControlItem[] {
   const flatten = (items: TreeItem[]): ControlSpec[] =>
     items.flatMap((item) => (isGroup(item) ? flatten(item.items) : [item]))
-  return controlTree(verbs, groups, { collect }).items.flatMap(
+  return controlTree(verbs, groups, { collect, face }).items.flatMap(
     (section, i): ControlItem[] =>
       i ? [{ separator: true }, ...flatten([section])] : flatten([section]),
   )

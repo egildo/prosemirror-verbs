@@ -5,7 +5,7 @@ import type { Command } from 'prosemirror-state'
 import {
   blocktypeVerb, expand, composeVerbs, relations, controlTree, controlSpecs, isGroup,
 } from '../src/index.js'
-import type { ControlSpec, TreeItem, VerbEntry } from '../src/index.js'
+import type { ControlGroup, ControlSpec, TreeItem, VerbEntry } from '../src/index.js'
 
 // The register's structure. Facts (conjugation) are derived and never declared;
 // opinions (which section a verb sits in) are attributed and arrive as the
@@ -127,6 +127,44 @@ describe('controlTree — sections, nested', () => {
   it('shows only declared sections — curation by omission, as the flat strip always did', () => {
     const { items } = controlTree(verbs, [{ id: 'history' }])
     expect(ids(items)).toEqual([['history', ['undo']]])
+  })
+})
+
+describe('controlTree — which face counts', () => {
+  const noIcon = (id: string, group: string): VerbEntry => ({ id, label: id, command: noop, group })
+  const verbs = composeVerbs(
+    { id: 'strong', icon: '•', command: noop, group: 'marks' },
+    noIcon('insert:image', 'marks'),
+  )
+
+  it('drops a faceless verb by default — a strip needs a picture', () => {
+    const { items } = controlTree(verbs, ['marks'])
+    expect((items[0] as ControlGroup).items.map((item) => (item as ControlSpec).id)).toEqual(['strong'])
+  })
+
+  it('keeps it when the face is words — a palette reaching what a strip cannot', () => {
+    // V15 promised an unpromoted verb stays "reachable by chord and by palette".
+    // Until this option there was no way for a palette to reach it: the tree
+    // could not produce the item at all.
+    const { items } = controlTree(verbs, ['marks'], { face: 'words' })
+    const drawn = (items[0] as ControlGroup).items as ControlSpec[]
+    expect(drawn.map((spec) => spec.id)).toEqual(['strong', 'insert:image'])
+    // Still deduced, not declared: no readback, so it is an action.
+    expect(drawn[1]!.kind).toBe('action')
+    expect(drawn[1]!.label).toBe('insert:image')
+  })
+
+  it('leaves a faceless *choice* alone either way — its shape never needed a picture', () => {
+    const choice = composeVerbs({
+      id: 'blocktype',
+      command: () => noop,
+      group: 'marks',
+      args: [{ name: 'blocktype', domain: [{ value: 'p' }] }],
+    } as VerbEntry)
+    for (const face of ['icon', 'words'] as const) {
+      const { items } = controlTree(choice, ['marks'], { face })
+      expect(((items[0] as ControlGroup).items[0] as ControlSpec).kind).toBe('choice')
+    }
   })
 })
 
