@@ -117,7 +117,8 @@ describe('markVerbs — one capability per mark', () => {
     // schema-basic writes `validate: "string"` on href — the closest the
     // noun-Schema comes to declaring an argument's type.
     expect(link.args![0]!.type).toBe('text')
-    expect(link.args![0]!.required).toBe(true)
+    // Optional, because no address means no link: the set removes it.
+    expect(link.args![0]!.required).toBeUndefined()
     expect((link.enabled as (s: EditorState) => boolean)(state)).toBe(true)
     expect(link.read!(state)).toBeNull()
   })
@@ -163,7 +164,58 @@ describe('markVerbs — one capability per mark', () => {
     expect(strong!.section).toBe('marks')
     // The one thing the schema cannot say: an href is a URL, not a string.
     const link = basicVerbs(basic).find((verb) => verb.id === 'link')!
-    expect(link.args![0]).toEqual({ name: 'href', label: 'URL', type: 'url', required: true })
+    expect(link.args![0]).toEqual({ name: 'href', label: 'URL', type: 'url' })
     expect(link.run(state, { href: 'https://x.org' })).toBeTypeOf('function')
+  })
+})
+
+describe('an attribute mark is set, never toggled', () => {
+  const link = markVerbs(basic).find((verb) => verb.id === 'link')!
+  const mark = basic.marks.link.create({ href: 'https://old.org' })
+  const doc = basic.node('doc', null, [
+    basic.node('paragraph', null, [basic.text('go '), basic.text('there', [mark]), basic.text(' now')]),
+  ])
+  // Runs the verb and hands back the state it leaves behind.
+  const apply = (state: EditorState, args: Record<string, unknown>) => {
+    let next = state
+    const ran = link.run(state, args)(state, (tr) => (next = state.apply(tr)))
+    return { ran, next }
+  }
+  const hrefs = (state: EditorState) => {
+    const found: [string, string][] = []
+    state.doc.descendants((node) => {
+      const on = basic.marks.link.isInSet(node.marks)
+      if (node.isText && on) found.push([node.text!, on.attrs.href as string])
+    })
+    return found
+  }
+
+  it('rewrites the whole link the cursor stands in — the bug a toggle had', () => {
+    const inside = EditorState.create({ doc, selection: TextSelection.near(doc.resolve(6)) })
+    const { ran, next } = apply(inside, { href: 'https://new.org' })
+    expect(ran).toBe(true)
+    expect(hrefs(next)).toEqual([['there', 'https://new.org']])
+    expect(link.read!(next)).toBe('https://new.org')
+  })
+
+  it('sets a selection, linking what was not linked', () => {
+    const range = EditorState.create({ doc, selection: TextSelection.create(doc, 1, 3) })
+    expect(hrefs(apply(range, { href: 'https://new.org' }).next)).toEqual([
+      ['go', 'https://new.org'],
+      ['there', 'https://old.org'],
+    ])
+  })
+
+  it('takes the mark away when given no value', () => {
+    const inside = EditorState.create({ doc, selection: TextSelection.near(doc.resolve(6)) })
+    expect(hrefs(apply(inside, {}).next)).toEqual([])
+  })
+
+  it('outside any link, sets what you type next, and has nothing to remove', () => {
+    const outside = EditorState.create({ doc, selection: TextSelection.near(doc.resolve(2)) })
+    const { next } = apply(outside, { href: 'https://new.org' })
+    expect(hrefs(next)).toEqual([['there', 'https://old.org']])
+    expect(link.read!(next)).toBe('https://new.org')
+    expect(apply(outside, {}).ran).toBe(false)
   })
 })

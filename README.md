@@ -85,7 +85,7 @@ Plugin state is the other readback source — a verb just writes its predicate o
 
 - **Declared** — `wrapVerbs(schema)` (blockquote, bullet list, ordered list), `historyVerbs()` (undo, redo). Hand-written starter sets, the way `prosemirror-schema-basic` ships starter nouns; a host may write its own entries instead.
 - **Derived** — the verb-Schema reading the noun-Schema (tablet V3), in `derive.ts`:
-  - `markVerbs(schema)` — one capability per mark. No required attrs ⇒ a toggle with a boolean readback; a mark carrying an attribute the spec gives no default (a link's `href`) ⇒ an **arg-verb** whose readback is the value you stand in and whose gate is the command's own dry run.
+  - `markVerbs(schema)` — one capability per mark. No required attrs ⇒ a toggle with a boolean readback; a mark carrying an attribute the spec gives no default (a link's `href`) ⇒ an **arg-verb** whose readback is the value you stand in, whose gate is the toggle's dry run, and whose command **sets** rather than toggles: given a value it writes it onto the selection, or onto the whole mark the cursor stands in; given none it takes the mark away.
   - `insertVerbs(schema)` — one *insert X* per node type, `insertPoint` answering "can this node go here?" position-aware, required attrs becoming the arg-schema.
   - `basicVerbs(schema)` — `markVerbs` dressed in the conventional taste (Bold/B/`Mod-b`, and the fact that an href is a URL, which no schema says). The starter set is now derived rather than hand-listed, so a schema carrying an underline gets it for free, with the same readback and the same gate as the four anyone thought about.
 

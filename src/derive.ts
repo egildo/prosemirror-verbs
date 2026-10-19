@@ -29,7 +29,7 @@
 import { toggleMark } from 'prosemirror-commands'
 import { insertPoint } from 'prosemirror-transform'
 import type { Command, EditorState } from 'prosemirror-state'
-import type { Attrs, ContentMatch, MarkType, NodeType, Schema } from 'prosemirror-model'
+import type { Attrs, ContentMatch, Mark, MarkType, NodeType, ResolvedPos, Schema } from 'prosemirror-model'
 import { fromCommands, markActive } from './registry.js'
 import type { Capability, VerbArgs, Verb } from './registry.js'
 import type { VerbArg } from 'verbr'
@@ -180,11 +180,60 @@ function attrReadback(type: MarkType, args: VerbArg[]) {
   }
 }
 
+// The stretch of text around a cursor that carries this very mark — the whole
+// link you stand in, not the one character beside the caret. The cursor sits
+// between two children, and the mark is on one of them.
+function markExtent($pos: ResolvedPos, mark: Mark): { from: number; to: number } | null {
+  const parent = $pos.parent
+  let index = $pos.index()
+  if (index >= parent.childCount || !mark.isInSet(parent.child(index).marks)) {
+    if (index > 0 && mark.isInSet(parent.child(index - 1).marks)) index -= 1
+    else return null
+  }
+  let from = $pos.start()
+  for (let i = 0; i < index; i++) from += parent.child(i).nodeSize
+  let to = from + parent.child(index).nodeSize
+  for (let i = index - 1; i >= 0 && mark.isInSet(parent.child(i).marks); i--) from -= parent.child(i).nodeSize
+  for (let i = index + 1; i < parent.childCount && mark.isInSet(parent.child(i).marks); i++) to += parent.child(i).nodeSize
+  return { from, to }
+}
+
+// Set a mark's attributes, or with `null` take the mark away — never toggle.
+// `toggleMark` was this verb's command, and a toggle cannot say *change the
+// address*: with the cursor in a link it took the link off whatever you typed
+// next, and over a selected link it removed it, while the field showed the
+// address you meant to replace. So this acts on what the readback shows: the
+// selection when there is one, else the whole mark the cursor stands in, else
+// the mark you are about to type with.
+function setMark(type: MarkType, attrs: Attrs | null): Command {
+  return (state, dispatch) => {
+    const { empty, $from, from, to } = state.selection
+    if (!empty) {
+      if (!attrs && !state.doc.rangeHasMark(from, to, type)) return false
+      if (dispatch) dispatch((attrs ? state.tr.addMark(from, to, type.create(attrs)) : state.tr.removeMark(from, to, type)).scrollIntoView())
+      return true
+    }
+    const current = type.isInSet(state.storedMarks || $from.marks())
+    const extent = current && !state.storedMarks ? markExtent($from, current) : null
+    if (extent) {
+      if (dispatch) {
+        const tr = state.tr.removeMark(extent.from, extent.to, type)
+        dispatch(attrs ? tr.addMark(extent.from, extent.to, type.create(attrs)) : tr)
+      }
+      return true
+    }
+    if (!attrs && !current) return false
+    if (dispatch) dispatch(attrs ? state.tr.addStoredMark(type.create(attrs)) : state.tr.removeStoredMark(type))
+    return true
+  }
+}
+
 /// Derivation → one capability per mark in the schema. A mark's domain is
 /// membership in the mark set, so its readback is boolean and its command is
 /// `toggleMark`; a mark carrying attributes the spec gives no default (a link's
-/// href) becomes an **arg-verb** instead, its readback the value you stand in
-/// and its gate the command's own dry run.
+/// href) becomes an **arg-verb** instead, its readback the value you stand in,
+/// its gate the toggle's dry run, and its command a **set**: given the values it
+/// writes them onto the mark you stand in, given none it takes the mark away.
 ///
 /// Nothing is named here — these are capabilities. `basicVerbs` below is this
 /// derivation plus the conventional dressing for the marks everyone has, which
@@ -195,7 +244,9 @@ export function markVerbs(schema: Schema): Verb[] {
 
 function markCapabilities(schema: Schema): Capability[] {
   return Object.values(schema.marks).map((type): Capability => {
-    const args = requiredAttrs(type.spec)
+    // Optional at the door, because their absence means something: no address
+    // is no link. Every one given sets the mark, none removes it, some is refused.
+    const args = requiredAttrs(type.spec).map(({ required: _, ...arg }) => arg)
     if (!args.length) {
       return {
         id: type.name,
@@ -205,7 +256,12 @@ function markCapabilities(schema: Schema): Capability[] {
     }
     return {
       id: type.name,
-      command: (values: VerbArgs) => toggleMark(type, values as Attrs),
+      command: (values: VerbArgs) => {
+        const given = args.filter((arg) => values[arg.name] !== undefined)
+        if (given.length === 0) return setMark(type, null)
+        if (given.length < args.length) return () => false
+        return setMark(type, Object.fromEntries(args.map((arg) => [arg.name, values[arg.name]])))
+      },
       args,
       read: attrReadback(type, args),
       // A factory can't be dry-run, so the gate is explicit — and it is the
@@ -231,7 +287,7 @@ const BASIC: Record<string, Record<string, unknown>> = {
     icon: 'link',
     keys: ['Mod-k'],
     keywords: ['link', 'url', 'href'],
-    args: [{ name: 'href', label: 'URL', type: 'url', required: true }],
+    args: [{ name: 'href', label: 'URL', type: 'url' }],
   },
 }
 // A strip reads in the order it is given, so the familiar four keep their
