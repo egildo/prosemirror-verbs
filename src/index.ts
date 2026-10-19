@@ -1,25 +1,22 @@
 // prosemirror-verbs — public surface.
 //
-// The registry and its pure projections, nothing else. The package does not care
-// who consumes it — human surfaces (a toolbar element, a palette) and machine
-// consumers (a console rig, a test, an agent) all project the same list. Nothing
-// here touches the DOM or knows a surface exists.
+// A ProseMirror profile of verbr. verbr owns the register, the taste, the
+// projection and the one checked door; this package says what only ProseMirror
+// can: verbs over an EditorState that run a Command, a command's dry run as its
+// availability, the keyboard as a stack of keymap plugins, and starter sets
+// read off the schema. Nothing here touches the DOM or knows a surface exists.
 
-// The contract, the two host acts, the keyboard, the projections, and the
-// starter sets that are hand-declared.
+// The entry contract, the door as a Command, the keyboard, and the starter sets
+// that are hand-declared.
 export {
+  fromCommands,
+  commandFor,
   blocktypeVerb,
   wrapVerbs,
   historyVerbs,
   expand,
-  composeVerbs,
   composeKeyboard,
-  collectingCommand,
   toKeymap,
-  applyAttrs,
-  humanizeId,
-  namingLayer,
-  formatKeys,
   markActive,
   markupActive,
   wrapDepth,
@@ -27,39 +24,14 @@ export {
 
 export type {
   Capability,
-  VerbAttrs,
-  AttrLayer,
-  AttrClaim,
-  Attributed,
-  VerbEntry,
   Verb,
-  VerbArg,
   VerbArgs,
-  DomainMember,
   CommandFactory,
   Collector,
   PolicyLayer,
   KeyClaim,
   Keyboard,
 } from './registry.js'
-
-// Projections: the register rendered into what a consumer eats. `controlSpecs`
-// is a flat view of `controlTree` — one layout among several, no longer the
-// only answer the projection can give.
-export { toolbarSpecs, controlSpecs, controlTree, isGroup } from './project.js'
-export type {
-  ToolbarSpec,
-  ToolbarItem,
-  ControlSpec,
-  ControlItem,
-  ControlGroup,
-  ControlTree,
-  ControlConflict,
-  TreeItem,
-  GroupSpec,
-  GroupList,
-  FaceRule,
-} from './project.js'
 
 // Relations: what the register knows about itself. Facts, derived — never
 // declared, so never wrong (V14).

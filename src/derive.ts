@@ -30,8 +30,9 @@ import { toggleMark } from 'prosemirror-commands'
 import { insertPoint } from 'prosemirror-transform'
 import type { Command, EditorState } from 'prosemirror-state'
 import type { Attrs, ContentMatch, MarkType, NodeType, Schema } from 'prosemirror-model'
-import { markActive } from './registry.js'
-import type { VerbArg, VerbArgs, VerbEntry } from './registry.js'
+import { fromCommands, markActive } from './registry.js'
+import type { Capability, VerbArgs, Verb } from './registry.js'
+import type { VerbArg } from 'verbr'
 
 // ── The authoring hint ───────────────────────────────────────────────────────
 
@@ -158,9 +159,9 @@ function requiredAttrs(spec: { attrs?: Record<string, unknown> } | undefined): V
     .map(([name, attr]) => {
       const validate = (attr as { validate?: unknown }).validate
       const kinds = typeof validate === 'string' ? validate.split('|') : []
-      if (kinds.includes('number')) return { name, type: 'number' }
-      if (kinds.includes('string')) return { name, type: 'text' }
-      return { name }
+      if (kinds.includes('number')) return { name, type: 'number', required: true }
+      if (kinds.includes('string')) return { name, type: 'text', required: true }
+      return { name, required: true }
     })
 }
 
@@ -188,8 +189,12 @@ function attrReadback(type: MarkType, args: VerbArg[]) {
 /// Nothing is named here — these are capabilities. `basicVerbs` below is this
 /// derivation plus the conventional dressing for the marks everyone has, which
 /// is the package eating its own doctrine.
-export function markVerbs(schema: Schema): VerbEntry[] {
-  return Object.values(schema.marks).map((type) => {
+export function markVerbs(schema: Schema): Verb[] {
+  return fromCommands(markCapabilities(schema))
+}
+
+function markCapabilities(schema: Schema): Capability[] {
+  return Object.values(schema.marks).map((type): Capability => {
     const args = requiredAttrs(type.spec)
     if (!args.length) {
       return {
@@ -217,7 +222,7 @@ export function markVerbs(schema: Schema): VerbEntry[] {
 // a string. This is the same shape a plugin uses to offer its taste (spreads'
 // `spreadsTaste`), applied to our own derivation; `args` rides here rather
 // than in a cascade layer because a capability key is closed to layers.
-const BASIC: Record<string, Partial<VerbEntry>> = {
+const BASIC: Record<string, Record<string, unknown>> = {
   strong: { label: 'Bold', icon: 'bold', keys: ['Mod-b'], keywords: ['bold', 'strong'] },
   em: { label: 'Italic', icon: 'italic', keys: ['Mod-i'], keywords: ['italic', 'emphasis'] },
   code: { label: 'Code', icon: 'code', keys: ['Mod-`'], keywords: ['code', 'monospace'] },
@@ -226,7 +231,7 @@ const BASIC: Record<string, Partial<VerbEntry>> = {
     icon: 'link',
     keys: ['Mod-k'],
     keywords: ['link', 'url', 'href'],
-    args: [{ name: 'href', label: 'URL', type: 'url' }],
+    args: [{ name: 'href', label: 'URL', type: 'url', required: true }],
   },
 }
 // A strip reads in the order it is given, so the familiar four keep their
@@ -238,14 +243,16 @@ const BASIC_ORDER = ['strong', 'em', 'code', 'link']
 /// instead. Since 2026-07-29 this is `markVerbs` dressed, not a hand-written
 /// list: a schema carrying an underline or a superscript now gets it for free,
 /// with the same readback and the same gate as the four we thought about.
-export function basicVerbs(schema: Schema): VerbEntry[] {
-  const rank = (verb: VerbEntry) => {
+export function basicVerbs(schema: Schema): Verb[] {
+  const rank = (verb: Capability) => {
     const at = BASIC_ORDER.indexOf(verb.id)
     return at < 0 ? BASIC_ORDER.length : at
   }
-  return markVerbs(schema)
-    .map((verb) => ({ ...verb, group: 'marks', ...BASIC[verb.id] }))
-    .sort((a, b) => rank(a) - rank(b))
+  return fromCommands(
+    markCapabilities(schema)
+      .map((verb) => ({ ...verb, section: 'marks', ...BASIC[verb.id] }))
+      .sort((a, b) => rank(a) - rank(b)),
+  )
 }
 
 // ── Nodes ────────────────────────────────────────────────────────────────────
@@ -278,22 +285,22 @@ const insertNode =
 /// one of which — `insert:table_cell` — really did put a third cell into a
 /// two-column row, past every structural command spreads wrote (verified in the
 /// venue, 2026-07-29).
-export function insertVerbs(schema: Schema): VerbEntry[] {
+export function insertVerbs(schema: Schema): Verb[] {
   const interior = new Set(interiorTypes(schema))
-  return Object.values(schema.nodes)
+  return fromCommands(Object.values(schema.nodes)
     .filter((type) => type !== schema.topNodeType && !type.isText)
     .filter((type) => !interior.has(type) && authoringOf(type)?.insert !== false)
-    .map((type) => {
+    .map((type): Capability => {
       const req = requiredAttrs(type.spec)
       const declared = authoringOf(type)?.insert
       const make = typeof declared === 'function' ? declared(type) : null
       return {
         id: `insert:${type.name}`,
         label: `Insert ${type.name.replace(/_/g, ' ')}`,
-        group: 'insert',
+        section: 'insert',
         ...(req.length && !make
           ? { command: (args: VerbArgs) => insertNode(type, args as Attrs), args: req }
           : { command: make ?? insertNode(type) }),
       }
-    })
+    }))
 }

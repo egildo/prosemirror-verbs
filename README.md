@@ -2,7 +2,7 @@
 
 The editor's **verb-Schema**. ProseMirror's `Schema` registers the document's *nouns* — the nodes and marks a document is made of. This registers its *verbs* — the commands, and how they are summoned.
 
-It is one small package: the registry and its pure projections, nothing else. It ships no UI — surfaces (a toolbar, a palette, a console rig) are the host's furniture, built once by consuming the registry. Its proving ground is [pm-testing-venue](https://github.com/egildo/pm-testing-venue), where every principle is exercised against a live editor. The reasoning lives in [tablet.md](tablet.md); this file is how to use it.
+It is a **ProseMirror profile of [verbr](../../verbr)**, the command register it was generalised into. verbr owns the register, the taste, the projection and the one checked door (`compose`, `applyTaste`, `project`, `invoke`); this package says what only ProseMirror can — that a verb's context is an `EditorState`, that what it runs is a `Command`, that a command's dry run is its availability, that the keyboard is a stack of keymap plugins — and ships the starter sets read off the schema. It ships no UI — surfaces (a toolbar, a palette, a console rig) are the host's furniture, built once by consuming the registry. Its proving ground is [pm-testing-venue](https://github.com/egildo/pm-testing-venue), where every principle is exercised against a live editor. The reasoning lives in [tablet.md](tablet.md); this file is how to use it.
 
 ## The entry contract
 
@@ -29,51 +29,47 @@ An entry has two halves, and the line between them is the doctrine (tablet V12).
   as:       'switch',                          // how to draw it, overriding what the shape implied
   keys:     ['Mod-b'],                         // chord(s) → the keyboard
   keywords: ['bold', 'strong'],                // extra search terms → palette
-  group:    'marks',                           // category → surface curation
-  // …and whatever a surface layer needs: room, manner, priority, unavailable
+  section:  'marks',                           // which section it sits in → surface layout
+  // …and whatever a surface layer needs: room, manner, priority
 }
 ```
 
-The test that tells them apart, for any new field: **could a second editor reasonably disagree?** If yes, it is taste. A plugin that wants to spare its hosts the naming may ship its suggestions as a *separate* export — plain data keyed by id, which a host seats as one layer or ignores (prosemirror-spreads' `spreadsTaste` is the worked example).
+The test that tells them apart, for any new field: **could a second editor reasonably disagree?** If yes, it is taste. A plugin that wants to spare its hosts the naming may ship its suggestions as a *separate* export — plain data keyed by id, which a host seats as one taste document or ignores (prosemirror-spreads' `spreadsTaste` is the worked example).
 
 The normative clauses:
 
-- **Required pair**: `id` and `command`. An entry with only these is a complete, API-callable verb, and `humanizeId` names it until someone names it better.
+- **Required pair**: `id` and `command`. An entry with only these is a complete, API-callable verb, and verbr's naming default names it until someone names it better.
 - **The invariant**: `args` declared ⟺ `command` is a factory `(args) => Command`.
 - **One readback**: `read` returns the current value of whatever state the verb addresses — a boolean for a toggle, a member value for one-of-N, a count for a wrap. There is no separate `active`; a surface lights on the reading it gets.
 - **Purity clause**: dry runs and readbacks are called on *every* editor transaction by syncing consumers — they must be pure and cheap.
 - **Extra properties are preserved, never refused** — the NodeSpec allowance (prosemirror-tables rides `tableRole` on it). Stash an `icon` or your own hints; consumers ignore what they don't know.
 - **A set guards its nouns**: a verb set returns only entries whose node and mark types exist in the schema it was given (`schema.nodes.x && {…}`, the way every set in this package does it). Composed into a host without your nouns, your set yields nothing — never entries that crash.
-- **`args[].type` is an open vocabulary** until collectors exist — it belongs to whoever collects.
+- **`args[].type` is verbr's vocabulary** — `text`, `number`, `url` and whatever the host adds at `compose` — checked at the door, so a name nobody holds is refused at build. `required: true` marks what a collector must supply.
 
-Composition normalizes every entry to one internal shape — `run: (args) => Command` — so no consumer branches on whether a verb takes arguments.
+`fromCommands(entries)` turns capabilities into verbr verbs, once, before composing: `run` hands back the Command (a factory gets the args), and a bare command's **dry run becomes its `enabled`**, so availability is declared nowhere twice. An arg-verb keeps the gate it declared. Every set this package exports is already converted; a plugin's plain entries go through `fromCommands` at the host.
 
 ## Composing
 
-`composeVerbs(...sets)` is the host's first act (tablet, *the composition law*): it takes arrays or single entries, normalizes them, and **refuses a duplicate id at build time** — the same law the keyboard applies to chords, possible only because one point sees every claim. Namespace your ids by taste (`insert:image`, `table:addRow`); the gate makes convention emerge rather than mandating one. And because entries are plain data, the host stays sovereign for free: re-key, strip, or override any entry with a `map` before composing — no API.
+verbr's `compose(sets, vocabulary)` is the host's first act (tablet, *the composition law*): it **refuses a duplicate id at build time** — the same law the keyboard applies to chords, possible only because one point sees every claim. Namespace your ids by taste (`insert:image`, `table:add-row`); the gate makes convention emerge rather than mandating one. And because entries are plain data, the host stays sovereign for free: re-key, strip, or override any entry with a `map` before composing — no API.
 
 ## Dressing
 
-`applyAttrs(verbs, layers)` is the host's second act (tablet V13): the taste, written as an ordered stack of layers over the composed register. Composition answers *what can this editor do*; attribution answers *what shall we call it, where does it go, what does it answer to* — different questions, so a venue writes them as two files.
+The taste is verbr's `applyTaste(register, documents, derivations)` (tablet V13): documents stacked root-first — a plugin's suggestions, then the host's — each holding per-verb opinions (`verbs`), rules over many verbs (`layers`), the `sections` a surface may lay verbs out in, and the words for withheld `reasons`. A document is **data**: a layer selects with `where` (an id glob, a `kind`, an attribute an earlier layer resolved) and computes, where it must, through a function the host names (`{ derive: 'room' }`). `describe`, `audit` and `orphans` are the sight a cascade owes. The declaration's own taste — a starter set's label, icon, keys and section — is the floor beneath every document.
 
 ```js
-const registry = applyAttrs(composeVerbs(/* … */), [
-  { name: 'spreads', attrs: (verb) => spreadsTaste[verb.id] ?? {} },   // a plugin's suggestions, seated
-  { name: 'sections', match: 'table:*', attrs: { group: 'table' } },   // a glob
-  { name: 'room', attrs: (verb) => ({ room: verb.args ? 'bounded' : 'glyph' }) },
-  { name: 'value bar', match: (v) => v.room === 'unbounded', attrs: { manner: 'docked' } },
-  { name: 'ours', match: 'table:abbr', attrs: { label: 'Reference name' } },
-])
-registry.verbs          // the dressed register — what you project
-registry.describe(id)   // every claim on this verb, in court order, the winner per key marked
-registry.audit()        // the sweep: every (verb, key) more than one layer claimed
+const taste = applyTaste(register, [
+  { name: 'spreads', verbs: spreadsTaste },                                    // a plugin's suggestions, seated
+  { name: 'venue',
+    sections: [{ id: 'marks', label: 'Format' }, { id: 'table', label: 'Table', as: 'menu' }],
+    layers: [
+      { name: 'sections', where: { id: 'table:*' }, attrs: { section: 'table' } },
+      { name: 'room', attrs: { room: { derive: 'room' } } },
+      { name: 'value bar', where: { room: 'unbounded' }, attrs: { manner: 'docked' } },
+    ] },
+], { room: (verb) => (verb.args ? 'bounded' : 'glyph') })
 ```
 
-- **Layers resolve in order, later winning per key**, and a layer sees the verb *as resolved so far* — so `match` can test what an earlier layer derived (`room` above), which is what makes this a cascade rather than a pile of patches.
-- **`match`** is an exact id, a `prefix*` glob, `*`, or a predicate. Deliberately not CSS — the day it needs specificity rules it has stopped being a stack of a host's opinions.
-- **Two layers are seated for you, beneath yours**: `naming`, which derives a label from the id, and `declaration`, whatever taste the entries carry. Both are ordinary layers, visible in `describe`, and yours beat them.
-- **Capability keys are closed**: a layer setting `id`, `command`, `read`, `enabled` or `args` throws at build. Taste may rename a verb, never redefine what it does.
-- **The bag is open**: `room`, `manner`, `priority` — words this package never learns ride through the projections untouched, to the surface that acts on them.
+Capability keys are closed to taste, and so are the keys the projection reads from the state. The bag is otherwise open: `room`, `manner`, `priority` ride through to the surface that acts on them. **Sections are a closed vocabulary**: a section a starter set names must be declared by some document, or the verb moved out of it, or `applyTaste` refuses.
 
 ## Availability, activity, domains
 
@@ -109,60 +105,19 @@ table: {
 ```
 
 This is a **capability fact, not taste**: no second editor could reasonably disagree that a table cell is not a top-level insert — which is exactly V12's test, run the other way. `sealed` states the cause once instead of the consequence on every interior spec; `interiorTypes(schema)` returns what it computed, because a whole-schema rule has to stay inspectable rather than magic. And `sealed` is **not** `isolating`, which it will often sit beside: that one governs whether selection and deletion cross a boundary.
-- **Declared once, expanded** — `blocktypeVerb(schema)` is *one* verb over the enumerable domain of textblock markups (paragraph, heading 1–6, code block). `expand(verb)` curries it into per-member no-arg forms — `blocktype:h2` with its face, chords, and a boolean `read` derived from the verb's member-valued one — that every projection eats unchanged (tablet V9, pinned). Hosts keep both: the verb for arg-taking consumers, the forms for keymap and toolbar.
+- **Declared once, expanded** — `blocktypeVerb(schema)` is *one* verb over the enumerable domain of textblock markups (paragraph, heading 1–6, code block). `expand(verb)` curries it into per-member no-arg forms — `blocktype:h2` with its face, chords, and a boolean `read` derived from the verb's member-valued one — that every projection eats unchanged (tablet V9, pinned). Each form's availability is its own command's dry run. Hosts keep both: the verb for arg-taking consumers, the forms for keymap and toolbar.
 
-All of it meets in the one act: `composeVerbs(basicVerbs(schema), blocktype, expand(blocktype), wrapVerbs(schema), historyVerbs(), insertVerbs(schema))`.
+All of it meets in the one act: `compose([basicVerbs(schema), blocktype, expand(blocktype), wrapVerbs(schema), historyVerbs(), insertVerbs(schema)])`.
 
-## Projections
+## The door, the keyboard, the projection
 
-The API grants pure, single-sourced computation; a consumer projects it into its native representation (tablet V8) — furniture for humans, signatures for machines.
+Every surface names a verb by id and runs it through one door, so a chord cannot run what a button refuses.
 
-- `composeKeyboard(verbs, policies, { collect })` — the whole keyboard as an ordered stack of layers (tablet, *the stack of courts*). The verb **chords** come first, flat-gated (a duplicate chord within the layer is a build error; arg-verbs bind through the collector when one is supplied, and are skipped otherwise); then the host's **policies** in the order given — `{ name, bindings }`, where a policy is one key carrying a chain resolved by position (Enter), the base keymap seated openly as the last of them. Returns `{ plugins, describe, audit }`: `plugins` is the ordered keymap plugins for the editor; `describe(key, state?)` answers who claims a key, in layer order, and — given a state — dry-runs the claimants to say who takes it now; `audit()` is the sweep — every key with more than one claimant across the stack, reported for the host's eye after composing a new plugin in, refusing nothing (cross-layer shadowing is the mechanism). Describe's honest limit: it sees layers and claims, never inside an imported `chainCommands`.
-- `toKeymap(verbs, { collect })` — the verb chord layer alone, for hosts that keep their other keymaps out of the composition.
-- `collectingCommand(verb, collect)` — the sync collector's wrap: an arg-verb as a plain dispatch-guarded command (see Arguments). `composeKeyboard` and `toolbarSpecs` apply it automatically when given `{ collect }`.
-- `toolbarSpecs(verbs, groups, { collect })` — the shape a toolbar-grade surface eats, curated to an ordered list of groups with a separator marker between sections; filtered to entries carrying an `icon` name; arg-verbs included only when `collect` is supplied. The spec's `active` is derived from `read` by truthiness (a boolean directly, a count when > 0) — the surface's native rendering of any domain. Each spec carries its `keys` so a surface can show chords. One-of-N forms render as honest radio: lit when current, no-op when pressed again (the toggle-back question is open — tablet, *the default member*).
-- `controlTree(verbs, groups, { collect })` — **the register with its structure kept**: sections in the order given, nested, each holding the controls of the verbs assigned to it. Returns `{ items, audit() }`. A section with nothing in it — and no child that has anything — does not appear, which is how availability-hiding generalises from a separator to a whole group. See *Sections* below.
-- `controlSpecs(verbs, groups, { collect })` — a **flat strip**: the tree walked depth-first, with a separator between top-level sections. This is a *view* of `controlTree`, which is the point — the flat arrangement is one layout among several rather than the only answer the projection can give.
+- `commandFor(register, id, { args, collect })` — verbr's `invoke`, as a ProseMirror **Command**. Its dry run answers availability and never collects; a real run checks availability and args at the door, then runs. An arg-verb summoned *without* args — a chord, a palette row — asks the collector on a real run; a cancel no-ops, and without a collector it refuses.
+- `composeKeyboard(register, taste, policies, { collect })` — the whole keyboard as an ordered stack of layers (tablet, *the stack of courts*). The verb **chords**, read from the taste's `keys`, come first, flat-gated (a duplicate chord within the layer is a build error; arg-verbs bind only with a collector); then the host's **policies** in the order given — `{ name, bindings }`, where a policy is one key carrying a chain resolved by position (Enter), the base keymap seated openly as the last of them. Returns `{ plugins, describe, audit }`: `describe(key, state?)` answers who claims a key, in layer order, and who takes it now; `audit()` is the sweep — every key with more than one claimant, refusing nothing. Describe's honest limit: it sees layers and claims, never inside an imported `chainCommands`.
+- `toKeymap(register, taste, { collect })` — the verb chord layer alone.
 
-Both control projections read a verb's **shape** and name the control it already implies. Nothing extra is declared; the fork was always in the data:
-
-| the declaration | `kind` | default `as` |
-|---|---|---|
-| no args, no readback | **action** — a doing. Needs an `icon` to appear at all | `button` |
-| no args, a boolean readback | **toggle** — a doing that is also a state | `button`, or `switch` |
-| one arg carrying a domain | **choice** — `expand` is the other, equally valid rendering | `select`, or `radio` |
-| one arg, no domain, a value readback | **value** — show it, edit it, commit through `write` | `field` |
-| several args | **action**, collected modally, and only when `collect` is supplied | `button` |
-
-**`kind` is a fact and `as` is taste** (tablet V15). The kind is deduced and closed; the drawing defaults from it and a cascade layer overrides it — and that needs nothing new, because `passthrough` has always carried a non-capability attribute through to the spec. A surface that does not know an `as` falls back to the kind's default: a typo costs a switch, never a control.
-
-Sections take `as` too — `inline` or `menu` — which is what makes a dropdown, a palette with headings and a page you descend into four layouts of one tree rather than three features.
-
-A field needs no `Collector`: the control *is* the collector, and asking is what a field replaces. `command` stays dry-runnable on every kind, so one uniform probe answers availability — and for a field or a select it doubles as the modal fallback a chord or a palette needs, having no control to read.
-- `formatKeys(key, { mac })` — a chord for humans: `Mod-b` → `⌘B` or `Ctrl+B`. Pure string work; the platform is the caller's conf, so the registry stays free of the DOM.
-
-More projections (`paletteItems`, a `toolManifest` for agent consumers) join as their consumers arrive.
-
-## Sections
-
-`groups` — the second parameter every control projection takes — is either a list of ids or a list of specs:
-
-```js
-const GROUPS = [
-  { id: 'marks',  label: 'Format' },
-  { id: 'table',  label: 'Table', icon: 'table', as: 'menu' },
-  { id: 'table/rows' },                  // nests under 'table'; label derived: "Rows"
-  { id: 'history', label: 'History' },
-]
-```
-
-- **Order is array position.** There is no ordering field and no need for one: VS Code needs `"navigation@1"` because its contributions arrive from manifests it cannot order, and a host writing one array does not (tablet V10 — refusal is a luxury of host-scale composition, and so is ordering).
-- **Nesting** comes from `parent`, or from a `/` path in the id when none is given. A path whose parent nobody declared becomes a root rather than vanishing.
-- **`label` absent** falls back to the last path segment, humanized — the sibling of how an unnamed verb gets called after its id.
-- **`as`** is `inline` (children as siblings, the strip's own arrangement) or `menu` (collapsed behind its own face). Same vocabulary as a leaf, one altitude up.
-- **Only declared sections appear.** A verb whose group nobody asked for is still in the register, still reachable by chord and by palette, and simply has no seat in this chrome.
-
-The rule this encodes (tablet V14): **taste about a verb lives in the cascade; taste about a section lives in the section list.** Which section a verb belongs to is an opinion about that verb, so a layer can override it; what the sections *are* is not about any verb at all.
+**The projection is verbr's** `project(register, state, taste, options)`: plain JSON a surface draws — a tree of sections holding `Control`s, each with its deduced `kind` (action, toggle, choice, value), its `as`, its words and picture, `enabled`, `pressed` or `value` read from the state, and its `shortcut` formatted for the platform. A surface holds no function; it re-projects when the state changes and runs by id. [prosemirror-surface](../prosemirror-surface) draws exactly that shape.
 
 ## Relations
 
@@ -173,36 +128,36 @@ Nothing declares it. The edges are derived by looking for `${base.id}:${member.v
 - **Self-verifying** — a form whose base was curated out of the composition truthfully has no base, and a host that never called `expand` gets no edges rather than a graph describing verbs that don't exist.
 - **Carried by the id convention**, so a host re-keying entries before composing (host sovereignty, tablet V10) loses the edges. Accepted deliberately: a broken convention *loses* an edge, a stale field *asserts a false one*.
 
-There is no `audit()` here — audit exists where claims compete, and derived facts don't. The condition that *is* worth reporting lives on `controlTree`: **a domain verb drawn alongside its own forms**, which is a host showing a select and a row of radio buttons for one declaration, having forgotten to choose.
+There is no `audit()` here — audit exists where claims compete, and derived facts don't. The condition that *is* worth reporting — **a domain verb drawn alongside its own forms**, a host showing a select and a row of radio buttons for one declaration — is a question about what got drawn, and belongs to whoever draws: the venue's console asks it of a projection with these edges.
 
 ## Arguments
 
-A verb that needs input — `link` needs an `href`, `insert image` a `src` — is an **arg-verb**: its `command` is a factory `(args) => Command`, and its `args` name what a collector must ask for (for inserts, read back from the node's own required attributes; for `blocktype`, an enumerable `domain`). Collection forks sync from async (tablet V6), and the **sync half is built**: `collectingCommand(verb, collect)` wraps an arg-verb in a self-prompting command, dispatch-guarded — the dry run answers availability without ever asking; only a real run collects, and a cancelled collection (`null`) no-ops. `collect(verb, state)` is chrome: the host supplies it (the proving venue's is a bare `window.prompt` asker) and hands it to the projections as `{ collect }` — with it, arg-verbs' chords bind and their toolbar faces appear; without it they stay declared, not collected. A collector should prefill from the verb's readback — link's `read` is the href you stand in, offered back ready to edit: domains are shared vocabulary between reading a value back and collecting one forward. Still ahead: the async collector (a surface that asks first, then dispatches — the palette's field).
+A verb that needs input — `link` needs an `href`, `insert image` a `src` — is an **arg-verb**: its `command` is a factory `(args) => Command`, and its `args` name what must be supplied (for inserts and marks, read off the node's own required attributes; for `blocktype`, an enumerable `domain`). There are two ways to supply them. A **field** or a **select** is the collector, inlined: the projection calls the verb a `value` or a `choice`, the surface shows its readback, and commits by running the id with args. A chord or a palette row has no control to read, so `commandFor` asks the **collector** on a real run — `collect(verb, state)`, chrome the host supplies (the proving venue's is a bare `window.prompt`), returning the args or `null` for a cancel. The dry run never asks. A collector should prefill from the verb's readback — link's `read` is the href you stand in, offered back ready to edit: domains are shared vocabulary between reading a value back and collecting one forward. Still ahead: the async collector (a surface that asks first, then dispatches).
 
 ## Hosting it
 
-One import for the package; the surfaces are the host's own furniture:
-
 ```js
+import { compose, applyTaste, project } from 'verbr'
 import { basicVerbs, blocktypeVerb, wrapVerbs, historyVerbs, insertVerbs, expand,
-         composeVerbs, composeKeyboard, toolbarSpecs } from 'prosemirror-verbs'
+         commandFor, composeKeyboard } from 'prosemirror-verbs'
 
 const blocktype = blocktypeVerb(schema)
-const verbs = composeVerbs(basicVerbs(schema), blocktype, expand(blocktype),
-                           wrapVerbs(schema), historyVerbs(), insertVerbs(schema))
+const register = compose([basicVerbs(schema), blocktype, expand(blocktype),
+                          wrapVerbs(schema), historyVerbs(), insertVerbs(schema)])
+const taste = applyTaste(register, { sections: [{ id: 'marks' }, { id: 'blocktype' },
+  { id: 'wraps' }, { id: 'insert' }, { id: 'history' }] })
 
-const keyboard = composeKeyboard(verbs, [
+const keyboard = composeKeyboard(register, taste, [
   { name: 'list behavior', bindings: listBehavior(schema) },
   { name: 'base', bindings: baseKeymap },
 ], { collect })
 
-const state = EditorState.create({
-  doc,
-  plugins: [...keyboard.plugins, /* your surfaces, cursors, history, … */],
-})
+// a surface: re-project on every state, run by id through the one door
+const controls = (state) => project(register, state, taste, { face: 'icon', includeUnavailable: true })
+const run = (id, args, view) => commandFor(register, id, { args, collect })(view.state, view.dispatch, view)
 ```
 
-A toolbar built on `toolbarSpecs` is a form bound to the selection: readbacks are its current values, verbs its setters. A headless consumer is the same registry with no DOM in the loop — the package does not care who calls; `keyboard.describe('Enter')` is its sight made tangible.
+A headless consumer is the same register with no DOM in the loop — the package does not care who calls; `keyboard.describe('Enter')` is its sight made tangible.
 
 A plugin joins without importing anything from here — its capabilities are plain data, its behavior keys are an exported policy layer, and what it would *call* things is a third export the host seats or ignores:
 
@@ -215,20 +170,21 @@ export const tableCapabilities = (schema) =>
 export const tableKeys = (schema) => ({ 'Tab': goToNextCell(1), 'Shift-Tab': goToNextCell(-1) })
 export const tableTaste = { 'table:add-row-after': { label: 'Add row after', icon: 'row-add-after' } }
 
-// in the host — one more argument to each act, and an audit to eyeball the stack
-const registry = applyAttrs(composeVerbs(basicVerbs(schema), tableCapabilities(schema)), [
-  { name: 'table', attrs: (verb) => tableTaste[verb.id] ?? {} },
-  { name: 'sections', match: 'table:*', attrs: { group: 'table' } },
+// in the host — the capabilities become verbs, the suggestions a taste document
+const register = compose([basicVerbs(schema), fromCommands(tableCapabilities(schema))])
+const taste = applyTaste(register, [
+  { name: 'table', verbs: tableTaste },
+  { name: 'venue', sections: [{ id: 'marks' }, { id: 'table' }],
+    layers: [{ name: 'sections', where: { id: 'table:*' }, attrs: { section: 'table' } }] },
 ])
-const keyboard = composeKeyboard(registry.verbs, [
+const keyboard = composeKeyboard(register, taste, [
   { name: 'table keys', bindings: tableKeys(schema) },
-  { name: 'list behavior', bindings: listBehavior(schema) },
   { name: 'base', bindings: baseKeymap },
 ], { collect })
 console.table(keyboard.audit()) // who shadows whom, in court order
-console.table(registry.audit()) // and the same sweep over attributes
+console.table(taste.audit())    // and the same sweep over taste
 ```
 
 ## Status
 
-An autonomous package, extracted from its proving venue on 2026-07-19 with the tablet carried along. The venue still hosts it as a specimen and keeps every surface (toolbar element, console rig, prompt collector) as its own furniture — plugins ship capabilities, hosts ship verbs and chrome (tablet V12, amended 2026-07-29). The async collector, the unified toolbar→palette surface, and the top-layer (`popover`) floating are deferred — see [tablet.md](tablet.md)'s open questions.
+An autonomous package, extracted from its proving venue on 2026-07-19 with the tablet carried along, and rebased on verbr on 2026-10-19: the composition, the cascade, the control projection and the sections moved there, and this package kept what is ProseMirror's. verbr is linked locally (`file:../../verbr`) until it is published. The venue still hosts it as a specimen and keeps every surface (toolbar element, console rig, prompt collector) as its own furniture — plugins ship capabilities, hosts ship verbs and chrome (tablet V12, amended 2026-07-29). The async collector is deferred — see [tablet.md](tablet.md)'s open questions. The tablet still speaks the old words (`group`, `applyAttrs`, `controlTree`); amending it is its author's call.

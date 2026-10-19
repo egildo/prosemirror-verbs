@@ -59,12 +59,12 @@ export interface Relations {
 /// field stamped at expansion time, and the reason is the failure mode — a
 /// broken convention *loses* an edge, a stale field *asserts a false one*.
 /// Losing beats lying, and whoever did the re-keying is the one who can re-derive.
-export function relations(verbs: Verb[]): Relations {
+export function relations(verbs: readonly Verb[]): Relations {
   const byId = new Map(verbs.map((verb) => [verb.id, verb]))
   const edges: RelationEdge[] = []
   for (const verb of verbs) {
     const domain = verb.args?.[0]?.domain
-    if (!domain) continue
+    if (!Array.isArray(domain)) continue
     for (const member of domain) {
       const form = `${verb.id}:${member.value}`
       if (byId.has(form)) edges.push({ base: verb.id, form })
@@ -104,4 +104,4 @@ export function relations(verbs: Verb[]): Relations {
 // not compete. A mirror for something with no reflection would be symmetry
 // rather than discipline. The condition that *is* worth auditing — a base verb
 // and its forms both drawn as controls — is a question about a projection's
-// output, not about these edges, and lives with `controlTree`.
+// output, not about these edges, and belongs to whoever draws.

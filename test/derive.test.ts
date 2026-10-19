@@ -3,8 +3,8 @@ import { Schema } from 'prosemirror-model'
 import { EditorState, TextSelection } from 'prosemirror-state'
 import { schema as basic } from 'prosemirror-schema-basic'
 import type { Command } from 'prosemirror-state'
-import { basicVerbs, insertVerbs, interiorTypes, markVerbs, composeVerbs } from '../src/index.js'
-import type { VerbArgs } from '../src/index.js'
+import { compose } from 'verbr'
+import { basicVerbs, insertVerbs, interiorTypes, markVerbs } from '../src/index.js'
 
 // Derivation — the verb-Schema reading the noun-Schema. Pins: the sealed
 // closure computes the right set and no more, insert-derivation honours it,
@@ -75,7 +75,7 @@ describe('insertVerbs honours authoring', () => {
       marks: basic.spec.marks,
     })
     const widget = insertVerbs(schema).find((verb) => verb.id === 'insert:widget')!
-    expect(widget.command).toBe(marked)
+    expect(widget.run(EditorState.create({ schema }))).toBe(marked)
   })
 
   it('the hazard it closes: a bare cell was insertable into a row', () => {
@@ -91,7 +91,8 @@ describe('insertVerbs honours authoring', () => {
       open.node('table', null, [open.node('row', null, [open.node('cell')])]),
     ])
     const state = EditorState.create({ doc, selection: TextSelection.near(doc.resolve(3)) })
-    expect((cell.command as Command)(state, undefined)).toBe(true)
+    expect(cell.enabled).toBeTypeOf('function')
+    expect((cell.enabled as (s: EditorState) => boolean)(state)).toBe(true)
     expect(insertVerbs(grid).find((verb) => verb.id === 'insert:cell')).toBeUndefined()
   })
 })
@@ -103,9 +104,11 @@ describe('markVerbs — one capability per mark', () => {
     const strong = markVerbs(basic).find((verb) => verb.id === 'strong')!
     expect(strong.args).toBeUndefined()
     expect(strong.read!(state)).toBe(false)
-    expect((strong.command as Command)(state, undefined)).toBe(true)
+    expect(strong.run(state)(state, undefined)).toBe(true)
+    // A bare command's dry run is its availability.
+    expect((strong.enabled as (s: EditorState) => boolean)(state)).toBe(true)
     // Bare capability: nothing here names it.
-    expect(Object.keys(strong).sort()).toEqual(['command', 'id', 'read'])
+    expect(Object.keys(strong).sort()).toEqual(['enabled', 'id', 'read', 'run'])
   })
 
   it('derives an arg-verb for a mark carrying a required attribute', () => {
@@ -114,7 +117,8 @@ describe('markVerbs — one capability per mark', () => {
     // schema-basic writes `validate: "string"` on href — the closest the
     // noun-Schema comes to declaring an argument's type.
     expect(link.args![0]!.type).toBe('text')
-    expect(link.enabled!(state)).toBe(true)
+    expect(link.args![0]!.required).toBe(true)
+    expect((link.enabled as (s: EditorState) => boolean)(state)).toBe(true)
     expect(link.read!(state)).toBeNull()
   })
 
@@ -151,17 +155,15 @@ describe('markVerbs — one capability per mark', () => {
   })
 
   it('basicVerbs is markVerbs dressed — same capability, conventional taste', () => {
-    const [strong] = composeVerbs(basicVerbs(basic))
+    const [strong] = compose([basicVerbs(basic)]).verbs
     expect(strong!.id).toBe('strong')
     expect(strong!.label).toBe('Bold')
     expect(strong!.icon).toBe('bold')
     expect(strong!.keys).toEqual(['Mod-b'])
-    expect(strong!.group).toBe('marks')
+    expect(strong!.section).toBe('marks')
     // The one thing the schema cannot say: an href is a URL, not a string.
     const link = basicVerbs(basic).find((verb) => verb.id === 'link')!
-    expect(link.args![0]).toEqual({ name: 'href', label: 'URL', type: 'url' })
-    expect(link.run).toBeUndefined() // still a raw entry; composition normalizes
-    const composed = composeVerbs(basicVerbs(basic)).find((verb) => verb.id === 'link')!
-    expect(composed.run({ href: 'x' } as VerbArgs)).toBeTypeOf('function')
+    expect(link.args![0]).toEqual({ name: 'href', label: 'URL', type: 'url', required: true })
+    expect(link.run(state, { href: 'https://x.org' })).toBeTypeOf('function')
   })
 })
