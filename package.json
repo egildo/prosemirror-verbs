@@ -43,6 +43,6 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "verbr": "file:../../verbr"
+    "verbr": "github:egildo/verbr"
   }
 }
