@@ -2,7 +2,7 @@
 
 The editor's **verb-Schema**. ProseMirror's `Schema` registers the document's *nouns* — the nodes and marks a document is made of. This registers its *verbs* — the commands, and how they are summoned.
 
-It is a **ProseMirror profile of [verbr](https://github.com/egildo/verbr)**, the command register it was generalised into. verbr owns the register, the taste, the projection and the one checked door (`compose`, `applyTaste`, `project`, `invoke`); this package says what only ProseMirror can — that a verb's context is an `EditorState`, that what it runs is a `Command`, that a command's dry run is its availability, that the keyboard is a stack of keymap plugins — and ships the starter sets read off the schema. It ships no UI — surfaces (a toolbar, a palette, a console rig) are the host's furniture, built once by consuming the registry. Its proving ground is [pm-testing-venue](https://github.com/egildo/pm-testing-venue), where every principle is exercised against a live editor. The reasoning lives in [tablet.md](tablet.md); this file is how to use it.
+It is a **ProseMirror profile of [verbr](https://codeberg.org/egildo/verbr)**, the command register it was generalised into. verbr owns the register, the taste, the projection and the one checked door (`compose`, `applyTaste`, `project`, `invoke`); this package says what only ProseMirror can — that a verb's context is an `EditorState`, that what it runs is a `Command`, that a command's dry run is its availability, that the keyboard is a stack of keymap plugins — and ships the starter sets read off the schema. It ships no UI — surfaces (a toolbar, a palette, a console rig) are the host's furniture, built once by consuming the registry. Its proving ground is [pm-testing-venue](https://github.com/egildo/pm-testing-venue), where every principle is exercised against a live editor. The reasoning lives in [tablet.md](tablet.md); this file is how to use it.
 
 ## The entry contract
 
@@ -137,7 +137,7 @@ A verb that needs input — `link` needs an `href`, `insert image` a `src` — i
 ## Hosting it
 
 ```js
-import { compose, applyTaste, project } from 'verbr'
+import { compose, applyTaste, project } from '@egildo/verbr'
 import { basicVerbs, blocktypeVerb, wrapVerbs, historyVerbs, insertVerbs, expand,
          commandFor, composeKeyboard } from 'prosemirror-verbs'
 

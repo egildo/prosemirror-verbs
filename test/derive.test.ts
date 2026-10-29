@@ -3,7 +3,7 @@ import { Schema } from 'prosemirror-model'
 import { EditorState, TextSelection } from 'prosemirror-state'
 import { schema as basic } from 'prosemirror-schema-basic'
 import type { Command } from 'prosemirror-state'
-import { compose } from 'verbr'
+import { compose } from '@egildo/verbr'
 import { basicVerbs, insertVerbs, interiorTypes, markVerbs } from '../src/index.js'
 
 // Derivation — the verb-Schema reading the noun-Schema. Pins: the sealed

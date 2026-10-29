@@ -9,7 +9,7 @@ import { schema as basic } from 'prosemirror-schema-basic'
 import { addListNodes } from 'prosemirror-schema-list'
 import { EditorState } from 'prosemirror-state'
 import type { Command } from 'prosemirror-state'
-import { applyTaste, compose, flat, project } from 'verbr'
+import { applyTaste, compose, flat, project } from '@egildo/verbr'
 import {
   fromCommands,
   commandFor,

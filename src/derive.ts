@@ -32,7 +32,7 @@ import type { Command, EditorState } from 'prosemirror-state'
 import type { Attrs, ContentMatch, Mark, MarkType, NodeType, ResolvedPos, Schema } from 'prosemirror-model'
 import { fromCommands, markActive } from './registry.js'
 import type { Capability, VerbArgs, Verb } from './registry.js'
-import type { VerbArg } from 'verbr'
+import type { VerbArg } from '@egildo/verbr'
 
 // ── The authoring hint ───────────────────────────────────────────────────────
 
